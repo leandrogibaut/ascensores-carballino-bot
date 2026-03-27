@@ -1,0 +1,31 @@
+# Configuración del negocio — Generado por AgentKit
+negocio:
+  nombre: "Ascensores Carballino"
+  razon_social: "I.S.V. SRL"
+  descripcion: >
+    Empresa especializada en instalación, modernización y mantenimiento de ascensores
+    y bombas elevadoras de agua. Atiende principalmente a consorcios de propietarios,
+    hoteles y empresas. Cuenta con personal altamente capacitado y brinda respuesta
+    inmediata a situaciones de emergencia.
+  horario: "24 horas, los 365 días del año"
+  horario_oficina: "Lunes a Viernes de 8:00hs a 18:00hs (personal administrativo)"
+  horario_emergencias: "Lunes a Viernes después de las 18hs, Sábados, Domingos y Feriados las 24hs"
+  telefono_oficina:
+    - "4301-3967"
+    - "4862-9685"
+  telefono_emergencias: "11-6502-4510"
+  email: "Ascensorescarballino@gmail.com"
+  ubicacion: "Buenos Aires, Argentina"
+
+agente:
+  nombre: "Olivia"
+  tono: "Profesional y formal"
+  casos_de_uso:
+    - "Tomar pedidos y solicitudes de servicio"
+    - "Responder consultas sobre servicios disponibles"
+    - "Informar sobre horarios y contactos de emergencia"
+    - "Registrar solicitudes de mantenimiento"
+
+metadata:
+  creado: "2026-03-27"
+  version: "1.0"
