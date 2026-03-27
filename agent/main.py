@@ -82,6 +82,7 @@ async def webhook_verificacion(request: Request):
     return {"status": "ok"}
 
 
+@app.post("/webhook/messages")
 @app.post("/webhook")
 async def webhook_handler(request: Request):
     """
