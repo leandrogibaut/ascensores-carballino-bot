@@ -35,12 +35,13 @@ PORT = int(os.getenv("PORT", 8000))
 def formatear_resumen_solicitud(datos_raw: str) -> str:
     """Convierte el tag interno de solicitud en un mensaje legible para el grupo."""
     campos = {
+        "tipo": "📋 Tipo de solicitud",
+        "nombre": "👤 Nombre",
+        "tel": "📞 Teléfono",
         "consorcio": "🏢 Consorcio/Empresa",
         "direccion": "📍 Dirección",
-        "contacto": "👤 Contacto",
-        "tel": "📞 Teléfono",
-        "servicio": "🔧 Servicio requerido",
-        "urgencia": "⚡ Urgencia",
+        "quien_abre": "🔑 Quién abre",
+        "piso_depto": "🏠 Piso/Depto",
     }
     lineas = []
     for clave, etiqueta in campos.items():
