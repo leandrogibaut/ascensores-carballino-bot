@@ -18,12 +18,17 @@ class ProveedorWhapi(ProveedorWhatsApp):
         self.url_envio = "https://gate.whapi.cloud/messages/text"
 
     async def parsear_webhook(self, request: Request) -> list[MensajeEntrante]:
-        """Parsea el payload de Whapi.cloud."""
+        """Parsea el payload de Whapi.cloud. Ignora mensajes de grupos."""
         body = await request.json()
         mensajes = []
         for msg in body.get("messages", []):
+            chat_id = msg.get("chat_id", "")
+            # Ignorar mensajes de grupos (@g.us) — solo atender chats individuales
+            if chat_id.endswith("@g.us"):
+                logger.debug(f"Mensaje de grupo ignorado: {chat_id}")
+                continue
             mensajes.append(MensajeEntrante(
-                telefono=msg.get("chat_id", ""),
+                telefono=chat_id,
                 texto=msg.get("text", {}).get("body", ""),
                 mensaje_id=msg.get("id", ""),
                 es_propio=msg.get("from_me", False),
