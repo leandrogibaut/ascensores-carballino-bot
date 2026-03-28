@@ -99,6 +99,16 @@ async def webhook_handler(request: Request):
             if msg.es_propio or not msg.texto:
                 continue
 
+            # Respuesta automática a intentos de llamada por WhatsApp
+            if msg.texto == "__llamada_whatsapp__":
+                aviso = (
+                    "Hola, por este número no atendemos llamadas de WhatsApp. "
+                    "Para emergencias llamá al 4301-3967 o escribinos aquí y te atendemos enseguida."
+                )
+                await proveedor.enviar_mensaje(msg.telefono, aviso)
+                logger.info(f"Intento de llamada de {msg.telefono} — mensaje automático enviado")
+                continue
+
             logger.info(f"Mensaje de {msg.telefono}: {msg.texto}")
 
             # Obtener historial ANTES de guardar el mensaje actual

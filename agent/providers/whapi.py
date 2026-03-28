@@ -94,6 +94,10 @@ class ProveedorWhapi(ProveedorWhatsApp):
                     if not texto:
                         texto = "[Audio no transcripto]"
 
+            elif tipo == "call":
+                # Intento de llamada por WhatsApp — responder con mensaje automático
+                texto = "__llamada_whatsapp__"
+
             else:
                 # Ignorar otros tipos (imagen, video, documento, etc.)
                 logger.debug(f"Tipo de mensaje no soportado: {tipo}")
