@@ -76,8 +76,9 @@ class ProveedorWhapi(ProveedorWhatsApp):
             chat_id = msg.get("chat_id", "")
             tipo = msg.get("type", "text")
 
-            # Ignorar mensajes de grupos (@g.us)
-            if chat_id.endswith("@g.us"):
+            # Ignorar mensajes de grupos EXCEPTO el grupo interno
+            grupo_interno = os.getenv("WHAPI_GROUP_ID", "")
+            if chat_id.endswith("@g.us") and chat_id != grupo_interno:
                 logger.debug(f"Mensaje de grupo ignorado: {chat_id}")
                 continue
 
