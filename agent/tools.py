@@ -84,16 +84,14 @@ def registrar_solicitud_servicio(
     return solicitud
 
 
-async def notificar_grupo_solicitud(telefono_cliente: str, resumen: str) -> bool:
+async def notificar_grupo_solicitud(telefono_cliente: str, resumen: str, proveedor=None) -> bool:
     """
     Envía un resumen de la solicitud al grupo interno de WhatsApp.
     Se llama automáticamente cuando Olivia completa la recopilación de datos.
     """
-    group_id = os.getenv("WHAPI_GROUP_ID")
-    token = os.getenv("WHAPI_TOKEN")
-
-    if not group_id or not token:
-        logger.warning("WHAPI_GROUP_ID o WHAPI_TOKEN no configurados — notificación no enviada")
+    group_id = os.getenv("WHAPI_GROUP_ID", "")
+    if not group_id:
+        logger.warning("WHAPI_GROUP_ID no configurado — notificación no enviada")
         return False
 
     mensaje = (
@@ -105,22 +103,14 @@ async def notificar_grupo_solicitud(telefono_cliente: str, resumen: str) -> bool
         f"🕐 {datetime.now().strftime('%d/%m/%Y %H:%M')}hs"
     )
 
-    import httpx
-    headers = {
-        "Authorization": f"Bearer {token}",
-        "Content-Type": "application/json",
-    }
-    async with httpx.AsyncClient() as client:
-        r = await client.post(
-            "https://gate.whapi.cloud/messages/text",
-            json={"to": group_id, "body": mensaje},
-            headers=headers,
-        )
-        if r.status_code != 200:
-            logger.error(f"Error enviando al grupo: {r.status_code} — {r.text}")
-        else:
-            logger.info(f"Solicitud notificada al grupo interno")
-        return r.status_code == 200
+    if proveedor:
+        resultado = await proveedor.enviar_mensaje(group_id, mensaje)
+        if resultado:
+            logger.info("Solicitud notificada al grupo interno")
+        return resultado
+
+    logger.warning("No hay proveedor disponible para notificar al grupo")
+    return False
 
 
 def es_emergencia(texto: str) -> bool:

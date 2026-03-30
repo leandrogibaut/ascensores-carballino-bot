@@ -224,7 +224,7 @@ async def webhook_handler(request: Request):
                     "piso_depto": extraido.get("piso_depto", ""),
                 })
                 # Notificar al grupo interno
-                await notificar_grupo_solicitud(msg.telefono, resumen_texto)
+                await notificar_grupo_solicitud(msg.telefono, resumen_texto, proveedor)
                 # Limpiar tag antes de enviar al cliente
                 respuesta = re.sub(r'\[SOLICITUD_COMPLETA:.+?\]', '', respuesta, flags=re.DOTALL).strip()
 

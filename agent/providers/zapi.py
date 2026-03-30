@@ -53,8 +53,11 @@ class ProveedorZapi(ProveedorWhatsApp):
         es_propio = body.get("fromMe", False)
 
         # Ignorar grupos (excepto grupo interno)
-        grupo_interno = os.getenv("WHAPI_GROUP_ID", "")
-        if es_grupo and telefono != grupo_interno:
+        # Normalizar formato: Z-API usa "123-group", Whapi usa "123@g.us"
+        grupo_interno_raw = os.getenv("WHAPI_GROUP_ID", "")
+        grupo_interno_id = grupo_interno_raw.replace("@g.us", "").replace("-group", "")
+        telefono_id = telefono.replace("-group", "").replace("@g.us", "")
+        if es_grupo and telefono_id != grupo_interno_id:
             logger.debug(f"Mensaje de grupo ignorado: {telefono}")
             return []
 
