@@ -87,9 +87,10 @@ async def enviar_resumen_diario():
     solicitudes = await obtener_solicitudes_del_dia()
     hoy = datetime.now().strftime("%d/%m/%Y")
 
+    grupo_zapi = GRUPO_INTERNO.replace("@g.us", "-group")
     if not solicitudes:
         msg = f"📊 *RESUMEN DEL DÍA — {hoy}*\n\nSin solicitudes registradas hoy."
-        await proveedor.enviar_mensaje(GRUPO_INTERNO, msg)
+        await proveedor.enviar_mensaje(grupo_zapi, msg)
         return
 
     resueltos = [s for s in solicitudes if s.estado == "resuelto"]
@@ -117,7 +118,7 @@ async def enviar_resumen_diario():
         for s in pendientes:
             lineas.append(f"  • {s.consorcio or s.nombre} — {s.direccion} ({s.tipo})")
 
-    await proveedor.enviar_mensaje(GRUPO_INTERNO, "\n".join(lineas))
+    await proveedor.enviar_mensaje(grupo_zapi, "\n".join(lineas))
     logger.info(f"Resumen diario enviado al grupo: {len(solicitudes)} solicitudes")
 
 
