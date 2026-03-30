@@ -63,8 +63,12 @@ class ProveedorZapi(ProveedorWhatsApp):
 
         texto = ""
         subtipo = body.get("subtype", "")
+        notificacion = body.get("notification", "")
 
-        if "text" in body:
+        if notificacion == "CALL_MISSED_VOICE":
+            # Llamada perdida — responder automáticamente
+            texto = "__llamada_whatsapp__"
+        elif "text" in body:
             texto = body["text"].get("message", "")
         elif subtipo in ("audio", "ptt"):
             # Audio: Z-API provee una URL de descarga
@@ -73,8 +77,9 @@ class ProveedorZapi(ProveedorWhatsApp):
                 texto = await self._transcribir_audio_url(audio_url)
             if not texto:
                 texto = "[Audio no transcripto]"
-        elif subtipo == "call":
-            texto = "__llamada_whatsapp__"
+        elif notificacion == "CALL_VOICE":
+            # Llamada en curso — ignorar, ya respondemos en CALL_MISSED_VOICE
+            return []
         else:
             return []
 
