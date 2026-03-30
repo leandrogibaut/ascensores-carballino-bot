@@ -104,7 +104,9 @@ async def notificar_grupo_solicitud(telefono_cliente: str, resumen: str, proveed
     )
 
     if proveedor:
+        logger.info(f"Enviando al grupo: '{group_id}' (len={len(group_id)})")
         resultado = await proveedor.enviar_mensaje(group_id, mensaje)
+        logger.info(f"Resultado envío grupo: {resultado}")
         if resultado:
             logger.info("Solicitud notificada al grupo interno")
         return resultado
