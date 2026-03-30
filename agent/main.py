@@ -184,7 +184,10 @@ async def webhook_handler(request: Request):
                 continue
 
             # ── Mensajes del grupo interno (técnicos reportando) ──
-            if msg.telefono == GRUPO_INTERNO:
+            # Normalizar formato: Z-API usa "123-group", Whapi usa "123@g.us"
+            telefono_norm = msg.telefono.replace("-group", "").replace("@g.us", "")
+            grupo_norm = GRUPO_INTERNO.replace("-group", "").replace("@g.us", "")
+            if telefono_norm == grupo_norm and grupo_norm:
                 estado, notas = analizar_mensaje_tecnico(msg.texto)
                 if estado:
                     solicitud = await buscar_solicitud_por_direccion(msg.texto)
