@@ -104,9 +104,10 @@ async def notificar_grupo_solicitud(telefono_cliente: str, resumen: str, proveed
     )
 
     if proveedor:
-        logger.info(f"Enviando al grupo: '{group_id}' (len={len(group_id)})")
-        resultado = await proveedor.enviar_mensaje(group_id, mensaje)
-        logger.info(f"Resultado envío grupo: {resultado}")
+        # Z-API usa formato "{id}-group" para grupos
+        group_id_zapi = group_id.replace("@g.us", "-group")
+        logger.info(f"Enviando al grupo: '{group_id_zapi}'")
+        resultado = await proveedor.enviar_mensaje(group_id_zapi, mensaje)
         if resultado:
             logger.info("Solicitud notificada al grupo interno")
         return resultado
