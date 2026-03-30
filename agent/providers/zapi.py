@@ -13,10 +13,13 @@ logger = logging.getLogger("agentkit")
 class ProveedorZapi(ProveedorWhatsApp):
     """Proveedor de WhatsApp usando Z-API."""
 
+    def __init__(self):
+        # Auto-detectado del primer webhook recibido si no está en env
+        self._instance_id = os.getenv("ZAPI_INSTANCE_ID", "")
+        self._token = os.getenv("ZAPI_TOKEN", "")
+
     def _get_base_url(self) -> str:
-        instance_id = os.getenv("ZAPI_INSTANCE_ID")
-        token = os.getenv("ZAPI_TOKEN")
-        return f"https://api.z-api.io/instances/{instance_id}/token/{token}"
+        return f"https://api.z-api.io/instances/{self._instance_id}/token/{self._token}"
 
     def _headers(self) -> dict:
         headers = {"Content-Type": "application/json"}
@@ -32,6 +35,11 @@ class ProveedorZapi(ProveedorWhatsApp):
 
         # Log del body completo para diagnóstico
         logger.info(f"Z-API webhook body: {body}")
+
+        # Auto-detectar instance_id del payload si no está en env
+        if not self._instance_id and body.get("instanceId"):
+            self._instance_id = body["instanceId"]
+            logger.info(f"Z-API instance_id auto-detectado: {self._instance_id}")
 
         # Z-API envía un objeto por webhook, no una lista
         tipo = body.get("type", "")
@@ -79,16 +87,15 @@ class ProveedorZapi(ProveedorWhatsApp):
         """Envía mensaje de texto via Z-API."""
         instance_id = os.getenv("ZAPI_INSTANCE_ID")
         token = os.getenv("ZAPI_TOKEN")
-        logger.info(f"Z-API enviar — instance_id set: {bool(instance_id)}, token set: {bool(token)}")
-        if not instance_id:
-            logger.warning("ZAPI_INSTANCE_ID no configurado o vacío")
-            return False
-        if not token:
-            logger.warning("ZAPI_TOKEN no configurado o vacío")
+        logger.info(f"Z-API enviar — instance_id: {bool(self._instance_id)}, token: {bool(self._token)}")
+        if not self._instance_id or not self._token:
+            logger.warning("ZAPI_INSTANCE_ID o ZAPI_TOKEN no disponibles")
             return False
         async with httpx.AsyncClient(timeout=15) as client:
+            url = f"{self._get_base_url()}/send-text"
+            logger.info(f"Z-API POST {url}")
             r = await client.post(
-                f"{self._get_base_url()}/send-text",
+                url,
                 json={"phone": telefono, "message": mensaje},
                 headers=self._headers(),
             )
