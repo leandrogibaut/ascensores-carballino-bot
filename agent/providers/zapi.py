@@ -30,6 +30,9 @@ class ProveedorZapi(ProveedorWhatsApp):
         body = await request.json()
         mensajes = []
 
+        # Log del body completo para diagnóstico
+        logger.info(f"Z-API webhook body: {body}")
+
         # Z-API envía un objeto por webhook, no una lista
         tipo = body.get("type", "")
 
