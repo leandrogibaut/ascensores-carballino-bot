@@ -121,21 +121,30 @@ async def enviar_resumen_diario():
     logger.info(f"Resumen diario enviado al grupo: {len(solicitudes)} solicitudes")
 
 
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    """Inicializa la base de datos y el scheduler al arrancar el servidor."""
+scheduler = None
+
+
+async def iniciar_servicios():
+    """Inicializa DB y scheduler en background para no demorar el startup."""
+    global scheduler
     await inicializar_db()
     logger.info("Base de datos inicializada")
-
-    # Scheduler para el resumen diario a las 20:00hs (hora Argentina UTC-3)
     scheduler = AsyncIOScheduler(timezone="America/Argentina/Buenos_Aires")
     scheduler.add_job(enviar_resumen_diario, CronTrigger(hour=20, minute=0, timezone="America/Argentina/Buenos_Aires"))
     scheduler.start()
     logger.info("Scheduler iniciado — resumen diario a las 20:00hs")
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Arranca servicios en background y cede control inmediatamente."""
+    import asyncio
+    asyncio.create_task(iniciar_servicios())
     logger.info(f"Servidor AgentKit corriendo en puerto {PORT}")
     logger.info(f"Proveedor de WhatsApp: {proveedor.__class__.__name__}")
     yield
-    scheduler.shutdown()
+    if scheduler and scheduler.running:
+        scheduler.shutdown()
 
 
 app = FastAPI(
