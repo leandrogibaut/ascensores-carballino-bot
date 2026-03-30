@@ -79,8 +79,12 @@ class ProveedorZapi(ProveedorWhatsApp):
         """Envía mensaje de texto via Z-API."""
         instance_id = os.getenv("ZAPI_INSTANCE_ID")
         token = os.getenv("ZAPI_TOKEN")
-        if not instance_id or not token:
-            logger.warning("ZAPI_INSTANCE_ID o ZAPI_TOKEN no configurados")
+        logger.info(f"Z-API enviar — instance_id set: {bool(instance_id)}, token set: {bool(token)}")
+        if not instance_id:
+            logger.warning("ZAPI_INSTANCE_ID no configurado o vacío")
+            return False
+        if not token:
+            logger.warning("ZAPI_TOKEN no configurado o vacío")
             return False
         async with httpx.AsyncClient(timeout=15) as client:
             r = await client.post(
