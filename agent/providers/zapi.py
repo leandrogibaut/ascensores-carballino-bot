@@ -13,16 +13,16 @@ logger = logging.getLogger("agentkit")
 class ProveedorZapi(ProveedorWhatsApp):
     """Proveedor de WhatsApp usando Z-API."""
 
-    def __init__(self):
-        self.instance_id = os.getenv("ZAPI_INSTANCE_ID")
-        self.token = os.getenv("ZAPI_TOKEN")
-        self.client_token = os.getenv("ZAPI_CLIENT_TOKEN", "")
-        self.base_url = f"https://api.z-api.io/instances/{self.instance_id}/token/{self.token}"
+    def _get_base_url(self) -> str:
+        instance_id = os.getenv("ZAPI_INSTANCE_ID")
+        token = os.getenv("ZAPI_TOKEN")
+        return f"https://api.z-api.io/instances/{instance_id}/token/{token}"
 
     def _headers(self) -> dict:
         headers = {"Content-Type": "application/json"}
-        if self.client_token:
-            headers["Client-Token"] = self.client_token
+        client_token = os.getenv("ZAPI_CLIENT_TOKEN", "")
+        if client_token:
+            headers["Client-Token"] = client_token
         return headers
 
     async def parsear_webhook(self, request: Request) -> list[MensajeEntrante]:
@@ -74,12 +74,14 @@ class ProveedorZapi(ProveedorWhatsApp):
 
     async def enviar_mensaje(self, telefono: str, mensaje: str) -> bool:
         """Envía mensaje de texto via Z-API."""
-        if not self.instance_id or not self.token:
+        instance_id = os.getenv("ZAPI_INSTANCE_ID")
+        token = os.getenv("ZAPI_TOKEN")
+        if not instance_id or not token:
             logger.warning("ZAPI_INSTANCE_ID o ZAPI_TOKEN no configurados")
             return False
         async with httpx.AsyncClient(timeout=15) as client:
             r = await client.post(
-                f"{self.base_url}/send-text",
+                f"{self._get_base_url()}/send-text",
                 json={"phone": telefono, "message": mensaje},
                 headers=self._headers(),
             )
