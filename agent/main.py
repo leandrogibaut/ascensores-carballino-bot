@@ -128,8 +128,10 @@ async def lifespan(app: FastAPI):
     logger.info("Base de datos inicializada")
 
     # Scheduler para el resumen diario a las 20:00hs (hora Argentina UTC-3)
-    scheduler = AsyncIOScheduler(timezone="America/Argentina/Buenos_Aires")
-    scheduler.add_job(enviar_resumen_diario, CronTrigger(hour=20, minute=0))
+    from zoneinfo import ZoneInfo
+    tz_argentina = ZoneInfo("America/Argentina/Buenos_Aires")
+    scheduler = AsyncIOScheduler(timezone=tz_argentina)
+    scheduler.add_job(enviar_resumen_diario, CronTrigger(hour=20, minute=0, timezone=tz_argentina))
     scheduler.start()
     logger.info("Scheduler iniciado — resumen diario a las 20:00hs")
     logger.info(f"Servidor AgentKit corriendo en puerto {PORT}")
