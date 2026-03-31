@@ -38,6 +38,10 @@ logger = logging.getLogger("agentkit")
 proveedor = obtener_proveedor()
 PORT = int(os.getenv("PORT", 8000))
 GRUPO_INTERNO = os.getenv("WHAPI_GROUP_ID", "")
+ADMIN_PHONE = "5491131815195"  # Número del administrador
+
+# Estado del bot (activo por defecto)
+bot_activo = True
 
 # Palabras que indican que algo quedó pendiente
 PALABRAS_PENDIENTE = ["pero", "falta", "hay que", "queda", "pendiente", "revisar", "cambiar", "arreglar", "espera"]
@@ -182,6 +186,24 @@ async def webhook_handler(request: Request):
 
         for msg in mensajes:
             if msg.es_propio or not msg.texto:
+                continue
+
+            # ── Comandos del administrador ──
+            global bot_activo
+            telefono_limpio = msg.telefono.replace("@s.whatsapp.net", "").replace("+", "")
+            if telefono_limpio == ADMIN_PHONE or msg.telefono == ADMIN_PHONE:
+                comando = msg.texto.strip().upper()
+                if comando == "PAUSA BOT":
+                    bot_activo = False
+                    await proveedor.enviar_mensaje(msg.telefono, "⏸️ Bot pausado. Los mensajes no serán respondidos automáticamente.")
+                    continue
+                elif comando == "ACTIVAR BOT":
+                    bot_activo = True
+                    await proveedor.enviar_mensaje(msg.telefono, "▶️ Bot activado. Olivia vuelve a responder automáticamente.")
+                    continue
+
+            # ── Si el bot está pausado, ignorar mensajes ──
+            if not bot_activo:
                 continue
 
             # ── Mensajes del grupo interno (técnicos reportando) ──
