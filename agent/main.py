@@ -126,6 +126,11 @@ async def enviar_resumen_diario():
     logger.info(f"Resumen diario enviado al grupo: {len(solicitudes)} solicitudes")
 
 
+# ── Debounce: acumular mensajes por teléfono antes de procesar ──
+DEBOUNCE_SEGUNDOS = 10
+mensajes_pendientes: dict[str, list[str]] = {}
+tareas_pendientes: dict[str, "asyncio.Task"] = {}
+
 scheduler = None
 
 
@@ -138,6 +143,50 @@ async def iniciar_servicios():
     scheduler.add_job(enviar_resumen_diario, CronTrigger(hour=20, minute=0, timezone="America/Argentina/Buenos_Aires"))
     scheduler.start()
     logger.info("Scheduler iniciado — resumen diario a las 20:00hs")
+
+
+async def procesar_mensaje_cliente(telefono: str, texto: str):
+    """Procesa un mensaje de cliente y genera respuesta de Olivia."""
+    import asyncio
+    historial = await obtener_historial(telefono)
+    respuesta = await generar_respuesta(texto, historial)
+
+    tag_match = re.search(r'\[SOLICITUD_COMPLETA:(.+?)\]', respuesta, re.DOTALL)
+    if tag_match:
+        datos_raw = tag_match.group(1).strip()
+        resumen_texto, extraido = formatear_resumen_solicitud(datos_raw)
+        await guardar_solicitud({
+            "telefono_cliente": telefono,
+            "tipo": extraido.get("tipo", ""),
+            "nombre": extraido.get("nombre", ""),
+            "consorcio": extraido.get("consorcio", ""),
+            "direccion": extraido.get("direccion", ""),
+            "quien_abre": extraido.get("quien_abre", ""),
+            "piso_depto": extraido.get("piso_depto", ""),
+        })
+        await notificar_grupo_solicitud(telefono, resumen_texto, proveedor)
+        respuesta = re.sub(r'\[SOLICITUD_COMPLETA:.+?\]', '', respuesta, flags=re.DOTALL).strip()
+
+    await guardar_mensaje(telefono, "user", texto)
+    await guardar_mensaje(telefono, "assistant", respuesta)
+    await proveedor.enviar_mensaje(telefono, respuesta)
+    logger.info(f"Respuesta a {telefono}: {respuesta}")
+
+
+async def procesar_acumulados(telefono: str):
+    """Espera el debounce y procesa todos los mensajes acumulados juntos."""
+    import asyncio
+    await asyncio.sleep(DEBOUNCE_SEGUNDOS)
+
+    textos = mensajes_pendientes.pop(telefono, [])
+    tareas_pendientes.pop(telefono, None)
+
+    if not textos:
+        return
+
+    texto_combinado = "\n".join(textos)
+    logger.info(f"Procesando {len(textos)} mensaje(s) acumulados de {telefono}: {texto_combinado}")
+    await procesar_mensaje_cliente(telefono, texto_combinado)
 
 
 @asynccontextmanager
@@ -230,34 +279,21 @@ async def webhook_handler(request: Request):
 
             logger.info(f"Mensaje de {msg.telefono}: {msg.texto}")
 
-            # ── Flujo normal: cliente escribe a Olivia ──
-            historial = await obtener_historial(msg.telefono)
-            respuesta = await generar_respuesta(msg.texto, historial)
+            # ── Debounce: acumular mensajes y esperar 10 segundos de silencio ──
+            import asyncio
+            if msg.telefono not in mensajes_pendientes:
+                mensajes_pendientes[msg.telefono] = []
+            mensajes_pendientes[msg.telefono].append(msg.texto)
 
-            # Detectar solicitud completa y guardar en DB + notificar grupo
-            tag_match = re.search(r'\[SOLICITUD_COMPLETA:(.+?)\]', respuesta, re.DOTALL)
-            if tag_match:
-                datos_raw = tag_match.group(1).strip()
-                resumen_texto, extraido = formatear_resumen_solicitud(datos_raw)
-                # Guardar en base de datos
-                await guardar_solicitud({
-                    "telefono_cliente": msg.telefono,
-                    "tipo": extraido.get("tipo", ""),
-                    "nombre": extraido.get("nombre", ""),
-                    "consorcio": extraido.get("consorcio", ""),
-                    "direccion": extraido.get("direccion", ""),
-                    "quien_abre": extraido.get("quien_abre", ""),
-                    "piso_depto": extraido.get("piso_depto", ""),
-                })
-                # Notificar al grupo interno
-                await notificar_grupo_solicitud(msg.telefono, resumen_texto, proveedor)
-                # Limpiar tag antes de enviar al cliente
-                respuesta = re.sub(r'\[SOLICITUD_COMPLETA:.+?\]', '', respuesta, flags=re.DOTALL).strip()
+            # Cancelar tarea anterior si existe
+            tarea_anterior = tareas_pendientes.get(msg.telefono)
+            if tarea_anterior and not tarea_anterior.done():
+                tarea_anterior.cancel()
 
-            await guardar_mensaje(msg.telefono, "user", msg.texto)
-            await guardar_mensaje(msg.telefono, "assistant", respuesta)
-            await proveedor.enviar_mensaje(msg.telefono, respuesta)
-            logger.info(f"Respuesta a {msg.telefono}: {respuesta}")
+            # Programar nueva tarea con el timer reseteado
+            tareas_pendientes[msg.telefono] = asyncio.create_task(
+                procesar_acumulados(msg.telefono)
+            )
 
         return {"status": "ok"}
 
