@@ -154,6 +154,30 @@ async def actualizar_estado_solicitud(solicitud_id: int, estado: str, notas: str
             await session.commit()
 
 
+async def obtener_solicitud_activa_por_telefono(telefono: str) -> "Solicitud | None":
+    """Retorna la solicitud registrada hoy para este teléfono, si ya existe."""
+    async with async_session() as session:
+        query = (
+            select(Solicitud)
+            .where(
+                (Solicitud.telefono_cliente == telefono) &
+                (Solicitud.fecha == date.today())
+            )
+            .order_by(Solicitud.timestamp.desc())
+            .limit(1)
+        )
+        result = await session.execute(query)
+        return result.scalar_one_or_none()
+
+
+async def buscar_solicitud_por_id(solicitud_id: int) -> "Solicitud | None":
+    """Busca una solicitud por su ID."""
+    async with async_session() as session:
+        query = select(Solicitud).where(Solicitud.id == solicitud_id)
+        result = await session.execute(query)
+        return result.scalar_one_or_none()
+
+
 async def buscar_solicitud_por_direccion(texto: str) -> Solicitud | None:
     """Busca la solicitud pendiente del día cuya dirección o consorcio aparece en el texto."""
     solicitudes = await obtener_solicitudes_del_dia()
@@ -165,6 +189,18 @@ async def buscar_solicitud_por_direccion(texto: str) -> Solicitud | None:
             if s.consorcio and s.consorcio.lower() in texto_lower:
                 return s
     return None
+
+
+async def tiene_mensajes_recientes(telefono: str, horas: int = 4) -> bool:
+    """Retorna True si hay mensajes del teléfono en las últimas N horas."""
+    from datetime import timedelta
+    cutoff = datetime.utcnow() - timedelta(hours=horas)
+    async with async_session() as session:
+        query = select(Mensaje).where(
+            (Mensaje.telefono == telefono) & (Mensaje.timestamp >= cutoff)
+        ).limit(1)
+        result = await session.execute(query)
+        return result.scalar_one_or_none() is not None
 
 
 async def limpiar_historial(telefono: str):

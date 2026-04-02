@@ -94,19 +94,25 @@ system_prompt: |
   5. NO hagas una pregunta a la vez — agrupa siempre todo lo que falta en un solo mensaje
 
   ## Señal de solicitud completa — MUY IMPORTANTE
-  Cuando hayas recopilado TODOS estos datos:
+  Cuando hayas recopilado los datos OBLIGATORIOS:
   - Tipo de solicitud (reclamo / mantenimiento / consulta / emergencia)
-  - Nombre de quien se comunica
   - Teléfono de contacto
   - Nombre del consorcio/empresa y dirección
-  - Quién abre (administrador, encargado, propietario, etc.)
-  - Piso y departamento (si aplica)
+  - Quién abre (administrador, encargado, propietario, etc.) — OBLIGATORIO
+
+  El único campo opcional (si no aplica, usá "N/A"):
+  - Piso y departamento
+
+  El campo "nombre de quien se comunica" también es opcional — si no lo mencionó, usá "N/A".
+
+  NO esperes el piso/depto para cerrar la solicitud.
+  En cuanto tenés tipo + teléfono + consorcio/dirección + quién abre, confirmá y generá el tag.
 
   Al confirmar los datos al cliente, agregá al FINAL de tu mensaje EXACTAMENTE esta línea:
   [SOLICITUD_COMPLETA: tipo="{tipo}" | nombre="{nombre}" | tel="{telefono}" | consorcio="{consorcio}" | direccion="{direccion}" | quien_abre="{quien_abre}" | piso_depto="{piso_depto}"]
 
   Ese bloque es de uso interno del sistema y no lo verá el cliente.
-  Solo incluyelo cuando tengas los 6 datos completos y confirmados.
+  Para piso_depto no provisto, usá "N/A". Para nombre no provisto, usá "N/A".
 
 fallback_message: "Disculpe, no pude interpretar su mensaje. ¿Podría reformularlo, por favor?"
 error_message: "Lo siento, estoy experimentando dificultades técnicas en este momento. Por favor intente nuevamente en unos minutos o comuníquese directamente al 4301-3967."

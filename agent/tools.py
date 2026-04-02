@@ -84,23 +84,27 @@ def registrar_solicitud_servicio(
     return solicitud
 
 
-async def notificar_grupo_solicitud(telefono_cliente: str, resumen: str, proveedor=None) -> bool:
+async def notificar_grupo_solicitud(telefono_cliente: str, resumen: str, proveedor=None, solicitud_id: int = 0) -> bool:
     """
     Envía un resumen de la solicitud al grupo interno de WhatsApp.
     Se llama automáticamente cuando Olivia completa la recopilación de datos.
+    Incluye el ID (#N) para que los técnicos puedan referenciarlo al responder.
     """
     group_id = os.getenv("WHAPI_GROUP_ID", "")
     if not group_id:
         logger.warning("WHAPI_GROUP_ID no configurado — notificación no enviada")
         return False
 
+    id_str = f" #{solicitud_id}" if solicitud_id else ""
     mensaje = (
-        f"📋 *NUEVA SOLICITUD DE SERVICIO*\n"
+        f"📋 *NUEVA SOLICITUD DE SERVICIO{id_str}*\n"
         f"─────────────────────────\n"
         f"{resumen}\n"
         f"─────────────────────────\n"
         f"📱 WhatsApp cliente: {telefono_cliente}\n"
-        f"🕐 {datetime.now().strftime('%d/%m/%Y %H:%M')}hs"
+        f"🕐 {datetime.now().strftime('%d/%m/%Y %H:%M')}hs\n"
+        f"─────────────────────────\n"
+        f"✏️ Responder: *LISTO #{solicitud_id}* o *PENDIENTE #{solicitud_id} [motivo]*"
     )
 
     if proveedor:

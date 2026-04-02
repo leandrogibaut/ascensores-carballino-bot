@@ -22,6 +22,8 @@ from agent.memory import (
     inicializar_db, guardar_mensaje, obtener_historial,
     guardar_solicitud, obtener_solicitudes_del_dia,
     actualizar_estado_solicitud, buscar_solicitud_por_direccion,
+    buscar_solicitud_por_id, tiene_mensajes_recientes,
+    obtener_solicitud_activa_por_telefono,
 )
 from agent.providers import obtener_proveedor
 from agent.tools import notificar_grupo_solicitud
@@ -42,6 +44,21 @@ ADMIN_PHONE = "5491131815195"  # Número del administrador
 
 # Estado del bot (activo por defecto)
 bot_activo = True
+
+# ── Menú inicial ──
+MENSAJE_MENU = (
+    "👋 ¡Bienvenido/a a *Ascensores Carballino*!\n\n"
+    "¿En qué podemos ayudarle?\n\n"
+    "*1* — RECLAMO / SERVICIO TÉCNICO\n"
+    "*2* — ADMINISTRACIÓN / PAGOS"
+)
+MENSAJE_ADM = (
+    "En breve se comunicarán con usted de administración. "
+    "Tenga en cuenta que los horarios de administración son "
+    "de 8 a 18hs de lunes a viernes."
+)
+# Estado del menú por teléfono: None = no visto | "esperando_menu" | "reclamo" | "administracion"
+sesion_menu: dict[str, str] = {}
 
 # Palabras que indican que algo quedó pendiente
 PALABRAS_PENDIENTE = ["pero", "falta", "hay que", "queda", "pendiente", "revisar", "cambiar", "arreglar", "espera"]
@@ -153,18 +170,23 @@ async def procesar_mensaje_cliente(telefono: str, texto: str):
 
     tag_match = re.search(r'\[SOLICITUD_COMPLETA:(.+?)\]', respuesta, re.DOTALL)
     if tag_match:
-        datos_raw = tag_match.group(1).strip()
-        resumen_texto, extraido = formatear_resumen_solicitud(datos_raw)
-        await guardar_solicitud({
-            "telefono_cliente": telefono,
-            "tipo": extraido.get("tipo", ""),
-            "nombre": extraido.get("nombre", ""),
-            "consorcio": extraido.get("consorcio", ""),
-            "direccion": extraido.get("direccion", ""),
-            "quien_abre": extraido.get("quien_abre", ""),
-            "piso_depto": extraido.get("piso_depto", ""),
-        })
-        await notificar_grupo_solicitud(telefono, resumen_texto, proveedor)
+        # Verificar si ya existe una solicitud registrada hoy para este número
+        solicitud_existente = await obtener_solicitud_activa_por_telefono(telefono)
+        if solicitud_existente:
+            logger.info(f"Solicitud #{solicitud_existente.id} ya registrada para {telefono} — tag duplicado ignorado")
+        else:
+            datos_raw = tag_match.group(1).strip()
+            resumen_texto, extraido = formatear_resumen_solicitud(datos_raw)
+            solicitud_id = await guardar_solicitud({
+                "telefono_cliente": telefono,
+                "tipo": extraido.get("tipo", ""),
+                "nombre": extraido.get("nombre", ""),
+                "consorcio": extraido.get("consorcio", ""),
+                "direccion": extraido.get("direccion", ""),
+                "quien_abre": extraido.get("quien_abre", ""),
+                "piso_depto": extraido.get("piso_depto", ""),
+            })
+            await notificar_grupo_solicitud(telefono, resumen_texto, proveedor, solicitud_id)
         respuesta = re.sub(r'\[SOLICITUD_COMPLETA:.+?\]', '', respuesta, flags=re.DOTALL).strip()
 
     await guardar_mensaje(telefono, "user", texto)
@@ -186,6 +208,43 @@ async def procesar_acumulados(telefono: str):
 
     texto_combinado = "\n".join(textos)
     logger.info(f"Procesando {len(textos)} mensaje(s) acumulados de {telefono}: {texto_combinado}")
+
+    # ── Lógica del menú inicial ──
+    estado = sesion_menu.get(telefono)
+
+    if estado is None:
+        # Primera vez en esta sesión del servidor — verificar actividad reciente
+        if await tiene_mensajes_recientes(telefono):
+            sesion_menu[telefono] = "reclamo"  # Conversación activa, no interrumpir
+        else:
+            sesion_menu[telefono] = "esperando_menu"
+            await proveedor.enviar_mensaje(telefono, MENSAJE_MENU)
+            return
+
+    if sesion_menu[telefono] == "esperando_menu":
+        texto_norm = texto_combinado.strip().lower()
+        if texto_norm in ("1", "reclamo", "servicio", "técnico", "tecnico"):
+            sesion_menu[telefono] = "reclamo"
+            # Olivia saluda y arranca el flujo de datos
+            await procesar_mensaje_cliente(telefono, "Hola, quiero hacer un reclamo o solicitar servicio técnico.")
+        elif texto_norm in ("2", "administracion", "administración", "adm", "pagos", "pago", "admin"):
+            sesion_menu[telefono] = "administracion"
+            await guardar_mensaje(telefono, "user", texto_combinado)
+            await guardar_mensaje(telefono, "assistant", MENSAJE_ADM)
+            await proveedor.enviar_mensaje(telefono, MENSAJE_ADM)
+        else:
+            await proveedor.enviar_mensaje(
+                telefono,
+                f"Por favor responda *1* para Reclamo o *2* para Administración/Pagos.\n\n{MENSAJE_MENU}"
+            )
+        return
+
+    if sesion_menu[telefono] == "administracion":
+        # Si vuelve a escribir después de elegir administración, repetir el mensaje
+        await proveedor.enviar_mensaje(telefono, MENSAJE_ADM)
+        return
+
+    # "reclamo" → flujo normal con Olivia
     await procesar_mensaje_cliente(telefono, texto_combinado)
 
 
@@ -262,10 +321,19 @@ async def webhook_handler(request: Request):
             if telefono_norm == grupo_norm and grupo_norm:
                 estado, notas = analizar_mensaje_tecnico(msg.texto)
                 if estado:
-                    solicitud = await buscar_solicitud_por_direccion(msg.texto)
+                    # Primero intentar matching por ID (#N)
+                    import re as _re
+                    id_match = _re.search(r'#(\d+)', msg.texto)
+                    if id_match:
+                        solicitud = await buscar_solicitud_por_id(int(id_match.group(1)))
+                    else:
+                        # Fallback: buscar por dirección o consorcio en el texto
+                        solicitud = await buscar_solicitud_por_direccion(msg.texto)
                     if solicitud:
                         await actualizar_estado_solicitud(solicitud.id, estado, notas)
                         logger.info(f"Solicitud #{solicitud.id} actualizada a '{estado}': {msg.texto}")
+                    else:
+                        logger.warning(f"Mensaje técnico sin solicitud coincidente: {msg.texto}")
                 continue
 
             # ── Respuesta automática a intentos de llamada ──
