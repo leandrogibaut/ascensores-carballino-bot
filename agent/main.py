@@ -46,12 +46,11 @@ ADMIN_PHONE = "5491131815195"  # Número del administrador
 bot_activo = True
 
 # ── Menú inicial ──
-MENSAJE_MENU = (
-    "👋 ¡Bienvenido/a a *Ascensores Carballino*!\n\n"
-    "¿En qué podemos ayudarle?\n\n"
-    "*1* — RECLAMO / SERVICIO TÉCNICO\n"
-    "*2* — ADMINISTRACIÓN / PAGOS"
-)
+MENSAJE_MENU = "👋 ¡Bienvenido/a a *Ascensores Carballino*!\n\n¿En qué podemos ayudarle?"
+BOTONES_MENU = [
+    {"id": "RECLAMO", "label": "🔧 Reclamo / Servicio Técnico"},
+    {"id": "ADM",     "label": "💼 Administración / Pagos"},
+]
 MENSAJE_ADM = (
     "En breve se comunicarán con usted de administración. "
     "Tenga en cuenta que los horarios de administración son "
@@ -218,25 +217,21 @@ async def procesar_acumulados(telefono: str):
             sesion_menu[telefono] = "reclamo"  # Conversación activa, no interrumpir
         else:
             sesion_menu[telefono] = "esperando_menu"
-            await proveedor.enviar_mensaje(telefono, MENSAJE_MENU)
+            await proveedor.enviar_menu_botones(telefono, MENSAJE_MENU, BOTONES_MENU)
             return
 
     if sesion_menu[telefono] == "esperando_menu":
-        texto_norm = texto_combinado.strip().lower()
-        if texto_norm in ("1", "reclamo", "servicio", "técnico", "tecnico"):
+        texto_norm = texto_combinado.strip().upper()
+        if texto_norm in ("RECLAMO", "1"):
             sesion_menu[telefono] = "reclamo"
-            # Olivia saluda y arranca el flujo de datos
             await procesar_mensaje_cliente(telefono, "Hola, quiero hacer un reclamo o solicitar servicio técnico.")
-        elif texto_norm in ("2", "administracion", "administración", "adm", "pagos", "pago", "admin"):
+        elif texto_norm in ("ADM", "2", "ADMINISTRACION", "ADMINISTRACIÓN", "PAGOS"):
             sesion_menu[telefono] = "administracion"
             await guardar_mensaje(telefono, "user", texto_combinado)
             await guardar_mensaje(telefono, "assistant", MENSAJE_ADM)
             await proveedor.enviar_mensaje(telefono, MENSAJE_ADM)
         else:
-            await proveedor.enviar_mensaje(
-                telefono,
-                f"Por favor responda *1* para Reclamo o *2* para Administración/Pagos.\n\n{MENSAJE_MENU}"
-            )
+            await proveedor.enviar_menu_botones(telefono, MENSAJE_MENU, BOTONES_MENU)
         return
 
     if sesion_menu[telefono] == "administracion":

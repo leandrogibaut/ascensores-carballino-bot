@@ -68,6 +68,12 @@ class ProveedorZapi(ProveedorWhatsApp):
         if notificacion == "CALL_MISSED_VOICE":
             # Llamada perdida — responder automáticamente
             texto = "__llamada_whatsapp__"
+        elif "buttonsResponseMessage" in body:
+            # Respuesta a botón interactivo — usar el ID del botón
+            texto = body["buttonsResponseMessage"].get("buttonId", "")
+        elif "listResponseMessage" in body:
+            # Respuesta a lista interactiva — usar el ID de la fila
+            texto = body["listResponseMessage"].get("rowId", "")
         elif "text" in body:
             texto = body["text"].get("message", "")
         elif subtipo in ("audio", "ptt"):
@@ -110,6 +116,31 @@ class ProveedorZapi(ProveedorWhatsApp):
             if r.status_code not in (200, 201):
                 logger.error(f"Error Z-API envío: {r.status_code} — {r.text}")
             return r.status_code in (200, 201)
+
+    async def enviar_menu_botones(self, telefono: str, texto: str, botones: list[dict]) -> bool:
+        """Envía un mensaje con botones interactivos via Z-API (send-button-list)."""
+        if not self._instance_id or not self._token:
+            logger.warning("ZAPI_INSTANCE_ID o ZAPI_TOKEN no disponibles")
+            return False
+        async with httpx.AsyncClient(timeout=15) as client:
+            url = f"{self._get_base_url()}/send-button-list"
+            payload = {
+                "phone": telefono,
+                "message": texto,
+                "buttonList": {
+                    "buttons": [
+                        {"id": b["id"], "label": b["label"]}
+                        for b in botones
+                    ]
+                }
+            }
+            r = await client.post(url, json=payload, headers=self._headers())
+            if r.status_code not in (200, 201):
+                logger.warning(f"Z-API botones falló ({r.status_code}), enviando texto plano")
+                # Fallback a texto plano si los botones no funcionan
+                opciones = "\n".join(f"*{b['id']}* — {b['label']}" for b in botones)
+                return await self.enviar_mensaje(telefono, f"{texto}\n\n{opciones}")
+            return True
 
     async def _transcribir_audio_url(self, audio_url: str) -> str:
         """Descarga el audio desde la URL de Z-API y lo transcribe con Groq."""

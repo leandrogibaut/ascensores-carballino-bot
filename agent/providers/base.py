@@ -33,6 +33,15 @@ class ProveedorWhatsApp(ABC):
         """Envía un mensaje de texto. Retorna True si fue exitoso."""
         ...
 
+    async def enviar_menu_botones(self, telefono: str, texto: str, botones: list[dict]) -> bool:
+        """
+        Envía un mensaje con botones interactivos.
+        botones: lista de {"id": "...", "label": "..."}
+        Fallback: envía texto plano si el proveedor no soporta botones.
+        """
+        opciones = "\n".join(f"*{b['id']}* — {b['label']}" for b in botones)
+        return await self.enviar_mensaje(telefono, f"{texto}\n\n{opciones}")
+
     async def validar_webhook(self, request: Request) -> dict | int | None:
         """Verificación GET del webhook (solo Meta la requiere). Retorna respuesta o None."""
         return None
