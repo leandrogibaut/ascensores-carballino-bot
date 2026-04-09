@@ -114,6 +114,10 @@ async def notificar_grupo_solicitud(telefono_cliente: str, resumen: str, proveed
         resultado = await proveedor.enviar_mensaje(group_id_zapi, mensaje)
         if resultado:
             logger.info("Solicitud notificada al grupo interno")
+            if solicitud_id:
+                from agent.memory import actualizar_mensaje_grupo_id
+                await actualizar_mensaje_grupo_id(solicitud_id, resultado)
+                logger.info(f"Solicitud #{solicitud_id} vinculada al mensaje del grupo {resultado}")
         return resultado
 
     logger.warning("No hay proveedor disponible para notificar al grupo")

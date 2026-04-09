@@ -24,6 +24,7 @@ from agent.memory import (
     actualizar_estado_solicitud, buscar_solicitud_por_direccion,
     buscar_solicitud_por_id, tiene_mensajes_recientes,
     obtener_solicitud_activa_por_telefono,
+    buscar_solicitud_por_mensaje_grupo,
 )
 from agent.providers import obtener_proveedor
 from agent.tools import notificar_grupo_solicitud
@@ -59,10 +60,6 @@ MENSAJE_ADM = (
 # Estado del menú por teléfono: None = no visto | "esperando_menu" | "reclamo" | "administracion"
 sesion_menu: dict[str, str] = {}
 
-# Palabras que indican que algo quedó pendiente
-PALABRAS_PENDIENTE = ["pero", "falta", "hay que", "queda", "pendiente", "revisar", "cambiar", "arreglar", "espera"]
-
-
 def formatear_resumen_solicitud(datos_raw: str) -> str:
     """Convierte el tag interno de solicitud en un mensaje legible para el grupo."""
     campos = {
@@ -86,20 +83,25 @@ def formatear_resumen_solicitud(datos_raw: str) -> str:
 
 def analizar_mensaje_tecnico(texto: str) -> tuple[str, str]:
     """
-    Analiza el mensaje de un técnico y determina el estado de la solicitud.
-    Retorna (estado, notas): estado es 'resuelto' o 'pendiente_con_nota'.
+    Analiza el mensaje del técnico. Se llama DESPUÉS de identificar la solicitud.
+    Retorna (estado, notas).
     """
-    texto_lower = texto.lower()
-    tiene_listo = any(p in texto_lower for p in ["listo", "ok", "hecho", "terminado", "resuelto"])
+    texto_lower = texto.lower().strip()
+
+    PALABRAS_LISTO = ["listo", "ok", "hecho", "terminado", "resuelto", "solucionado", "andando", "funcionando"]
+    PALABRAS_PENDIENTE = ["falta", "hay que", "queda pendiente", "no pude", "no puedo", "mañana", "pendiente", "espera", "esperando"]
+
+    tiene_listo = any(p in texto_lower for p in PALABRAS_LISTO)
     tiene_pendiente = any(p in texto_lower for p in PALABRAS_PENDIENTE)
 
     if tiene_listo and tiene_pendiente:
         return "pendiente_con_nota", texto
-    elif tiene_listo:
+    if tiene_listo:
         return "resuelto", texto
-    elif tiene_pendiente:
+    if tiene_pendiente:
         return "pendiente_con_nota", texto
-    return None, None
+    # Sin palabras claras: lo tratamos como nota informativa sobre la solicitud
+    return "pendiente_con_nota", texto
 
 
 async def enviar_resumen_diario():
@@ -211,8 +213,8 @@ async def procesar_acumulados(telefono: str):
     # ── Lógica del menú inicial ──
     estado = sesion_menu.get(telefono)
 
-    if estado is None:
-        # Primera vez en esta sesión del servidor — verificar actividad reciente
+    if estado is None or (estado == "reclamo" and not await tiene_mensajes_recientes(telefono)):
+        # Sin estado previo, o la sesión expiró (más de 4hs sin actividad) → menú nuevo
         if await tiene_mensajes_recientes(telefono):
             sesion_menu[telefono] = "reclamo"  # Conversación activa, no interrumpir
         else:
@@ -314,21 +316,34 @@ async def webhook_handler(request: Request):
             telefono_norm = msg.telefono.replace("-group", "").replace("@g.us", "")
             grupo_norm = GRUPO_INTERNO.replace("-group", "").replace("@g.us", "")
             if telefono_norm == grupo_norm and grupo_norm:
-                estado, notas = analizar_mensaje_tecnico(msg.texto)
-                if estado:
-                    # Primero intentar matching por ID (#N)
-                    import re as _re
-                    id_match = _re.search(r'#(\d+)', msg.texto)
+                solicitud = None
+
+                # Prioridad 1: si es un reply, buscar por el messageId al que responde
+                if msg.reference_message_id:
+                    solicitud = await buscar_solicitud_por_mensaje_grupo(msg.reference_message_id)
+                    if solicitud:
+                        logger.info(f"Solicitud #{solicitud.id} identificada por reply (referenceMessageId={msg.reference_message_id})")
+
+                # Prioridad 2: matching por #N
+                if not solicitud:
+                    id_match = re.search(r'#(\d+)', msg.texto)
                     if id_match:
                         solicitud = await buscar_solicitud_por_id(int(id_match.group(1)))
-                    else:
-                        # Fallback: buscar por dirección o consorcio en el texto
-                        solicitud = await buscar_solicitud_por_direccion(msg.texto)
+                        if solicitud:
+                            logger.info(f"Solicitud #{solicitud.id} identificada por #N")
+
+                # Prioridad 3: matching por dirección o consorcio
+                if not solicitud:
+                    solicitud = await buscar_solicitud_por_direccion(msg.texto)
                     if solicitud:
-                        await actualizar_estado_solicitud(solicitud.id, estado, notas)
-                        logger.info(f"Solicitud #{solicitud.id} actualizada a '{estado}': {msg.texto}")
-                    else:
-                        logger.warning(f"Mensaje técnico sin solicitud coincidente: {msg.texto}")
+                        logger.info(f"Solicitud #{solicitud.id} identificada por dirección")
+
+                if solicitud:
+                    estado, notas = analizar_mensaje_tecnico(msg.texto)
+                    await actualizar_estado_solicitud(solicitud.id, estado, notas)
+                    logger.info(f"Solicitud #{solicitud.id} actualizada a '{estado}': {msg.texto}")
+                else:
+                    logger.warning(f"Mensaje técnico sin solicitud coincidente: {msg.texto}")
                 continue
 
             # ── Respuesta automática a intentos de llamada ──

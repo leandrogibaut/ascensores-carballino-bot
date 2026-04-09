@@ -18,6 +18,8 @@ class MensajeEntrante:
     texto: str          # Contenido del mensaje
     mensaje_id: str     # ID único del mensaje
     es_propio: bool     # True si lo envió el agente (se ignora)
+    reference_message_id: str | None = None  # ID del mensaje citado (reply)
+    message_id: str | None = None            # ID propio del mensaje (para tracking)
 
 
 class ProveedorWhatsApp(ABC):
@@ -29,8 +31,8 @@ class ProveedorWhatsApp(ABC):
         ...
 
     @abstractmethod
-    async def enviar_mensaje(self, telefono: str, mensaje: str) -> bool:
-        """Envía un mensaje de texto. Retorna True si fue exitoso."""
+    async def enviar_mensaje(self, telefono: str, mensaje: str) -> str | None:
+        """Envía un mensaje de texto. Retorna el messageId si fue exitoso, None si falló."""
         ...
 
     async def enviar_menu_botones(self, telefono: str, texto: str, botones: list[dict]) -> bool:

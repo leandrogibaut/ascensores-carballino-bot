@@ -10,7 +10,7 @@ import os
 from datetime import datetime
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
-from sqlalchemy import String, Text, DateTime, select, Integer, Date
+from sqlalchemy import String, Text, DateTime, select, Integer, Date, text
 from datetime import date
 from dotenv import load_dotenv
 
@@ -54,6 +54,7 @@ class Solicitud(Base):
     direccion: Mapped[str] = mapped_column(String(200), default="")
     quien_abre: Mapped[str] = mapped_column(String(100), default="")
     piso_depto: Mapped[str] = mapped_column(String(50), default="")
+    mensaje_grupo_id: Mapped[str] = mapped_column(String(100), default="", index=True)
     estado: Mapped[str] = mapped_column(String(20), default="pendiente")  # pendiente | resuelto | pendiente_con_nota
     notas_tecnico: Mapped[str] = mapped_column(Text, default="")
     fecha: Mapped[date] = mapped_column(Date, default=date.today)
@@ -61,9 +62,14 @@ class Solicitud(Base):
 
 
 async def inicializar_db():
-    """Crea las tablas si no existen."""
+    """Crea las tablas si no existen y aplica migraciones defensivas."""
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+        # Migración defensiva: agregar columna mensaje_grupo_id si no existe (SQLite no tiene IF NOT EXISTS para columnas)
+        try:
+            await conn.execute(text("ALTER TABLE solicitudes ADD COLUMN mensaje_grupo_id VARCHAR(100) DEFAULT ''"))
+        except Exception:
+            pass  # la columna ya existe
 
 
 async def guardar_mensaje(telefono: str, role: str, content: str):
@@ -79,28 +85,51 @@ async def guardar_mensaje(telefono: str, role: str, content: str):
         await session.commit()
 
 
-async def obtener_historial(telefono: str, limite: int = 20) -> list[dict]:
+async def obtener_historial(telefono: str, limite: int = 20, timeout_horas: int = 4) -> list[dict]:
     """
     Recupera los últimos N mensajes de una conversación.
+    Si el último mensaje tiene más de timeout_horas, retorna lista vacía
+    (la conversación se considera terminada y empieza de cero).
 
     Args:
         telefono: Número de teléfono del cliente
         limite: Máximo de mensajes a recuperar (default: 20)
+        timeout_horas: Horas de inactividad para resetear el contexto (default: 4)
 
     Returns:
         Lista de diccionarios con role y content
     """
+    from datetime import timedelta
+    cutoff = datetime.utcnow() - timedelta(hours=timeout_horas)
+
     async with async_session() as session:
-        query = (
+        # Verificar si hay mensajes recientes antes de traer el historial
+        ultimo_query = (
             select(Mensaje)
             .where(Mensaje.telefono == telefono)
+            .order_by(Mensaje.timestamp.desc())
+            .limit(1)
+        )
+        resultado = await session.execute(ultimo_query)
+        ultimo = resultado.scalar_one_or_none()
+
+        # Si no hay mensajes o el último es muy viejo, contexto nuevo
+        if not ultimo or ultimo.timestamp < cutoff:
+            return []
+
+        query = (
+            select(Mensaje)
+            .where(
+                (Mensaje.telefono == telefono) &
+                (Mensaje.timestamp >= cutoff)
+            )
             .order_by(Mensaje.timestamp.desc())
             .limit(limite)
         )
         result = await session.execute(query)
         mensajes = result.scalars().all()
 
-        # Invertir para orden cronológico (los más recientes están primero)
+        # Invertir para orden cronológico
         mensajes.reverse()
 
         return [
@@ -212,3 +241,24 @@ async def limpiar_historial(telefono: str):
         for msg in mensajes:
             await session.delete(msg)
         await session.commit()
+
+
+async def buscar_solicitud_por_mensaje_grupo(mensaje_id: str) -> "Solicitud | None":
+    """Busca una solicitud por el ID del mensaje que el bot publicó en el grupo."""
+    if not mensaje_id:
+        return None
+    async with async_session() as session:
+        query = select(Solicitud).where(Solicitud.mensaje_grupo_id == mensaje_id)
+        result = await session.execute(query)
+        return result.scalar_one_or_none()
+
+
+async def actualizar_mensaje_grupo_id(solicitud_id: int, mensaje_grupo_id: str):
+    """Guarda el ID del mensaje del grupo asociado a la solicitud para después matchear replies."""
+    async with async_session() as session:
+        query = select(Solicitud).where(Solicitud.id == solicitud_id)
+        result = await session.execute(query)
+        solicitud = result.scalar_one_or_none()
+        if solicitud:
+            solicitud.mensaje_grupo_id = mensaje_grupo_id
+            await session.commit()

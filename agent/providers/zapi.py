@@ -2,6 +2,7 @@
 # Generado por AgentKit
 
 import os
+import json
 import logging
 import httpx
 from fastapi import Request
@@ -34,12 +35,17 @@ class ProveedorZapi(ProveedorWhatsApp):
         mensajes = []
 
         # Log del body completo para diagnóstico
-        logger.info(f"Z-API webhook body: {body}")
+        logger.info(f"Z-API webhook body:\n{json.dumps(body, indent=2, ensure_ascii=False)}")
 
         # Auto-detectar instance_id del payload si no está en env
         if not self._instance_id and body.get("instanceId"):
             self._instance_id = body["instanceId"]
             logger.info(f"Z-API instance_id auto-detectado: {self._instance_id}")
+
+        # 2B: descartar mensajes borrados (REVOKE) antes de procesar nada más
+        if body.get("notification") == "REVOKE":
+            logger.debug("Webhook REVOKE ignorado")
+            return []
 
         # Z-API envía un objeto por webhook, no una lista
         tipo = body.get("type", "")
@@ -94,17 +100,17 @@ class ProveedorZapi(ProveedorWhatsApp):
             texto=texto,
             mensaje_id=body.get("messageId", ""),
             es_propio=es_propio,
+            reference_message_id=body.get("referenceMessageId"),  # 2A: ID del mensaje citado (reply)
+            message_id=body.get("messageId"),                     # 2A: ID propio del mensaje
         ))
         return mensajes
 
-    async def enviar_mensaje(self, telefono: str, mensaje: str) -> bool:
-        """Envía mensaje de texto via Z-API."""
-        instance_id = os.getenv("ZAPI_INSTANCE_ID")
-        token = os.getenv("ZAPI_TOKEN")
+    async def enviar_mensaje(self, telefono: str, mensaje: str) -> str | None:
+        """Envía mensaje de texto via Z-API. Retorna el messageId si fue exitoso, None si falló."""
         logger.info(f"Z-API enviar — instance_id: {bool(self._instance_id)}, token: {bool(self._token)}")
         if not self._instance_id or not self._token:
             logger.warning("ZAPI_INSTANCE_ID o ZAPI_TOKEN no disponibles")
-            return False
+            return None
         async with httpx.AsyncClient(timeout=15) as client:
             url = f"{self._get_base_url()}/send-text"
             logger.info(f"Z-API POST {url}")
@@ -113,9 +119,12 @@ class ProveedorZapi(ProveedorWhatsApp):
                 json={"phone": telefono, "message": mensaje},
                 headers=self._headers(),
             )
+            logger.info(f"Z-API respuesta envío: {r.status_code} — {json.dumps(r.json(), indent=2, ensure_ascii=False)}")
             if r.status_code not in (200, 201):
                 logger.error(f"Error Z-API envío: {r.status_code} — {r.text}")
-            return r.status_code in (200, 201)
+                return None
+            data = r.json()
+            return data.get("messageId") or data.get("id")
 
     async def enviar_menu_botones(self, telefono: str, texto: str, botones: list[dict]) -> bool:
         """Envía un mensaje con botones interactivos via Z-API (send-button-list)."""

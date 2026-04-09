@@ -47,6 +47,10 @@ def obtener_mensaje_fallback() -> str:
     return config.get("fallback_message", "Disculpe, no pude interpretar su mensaje. ¿Podría reformularlo, por favor?")
 
 
+# Modelo principal para el chat (rápido y económico)
+MODELO_CHAT = "claude-haiku-4-5-20251001"
+
+
 async def generar_respuesta(mensaje: str, historial: list[dict]) -> str:
     """
     Genera una respuesta usando Claude API.
@@ -64,9 +68,12 @@ async def generar_respuesta(mensaje: str, historial: list[dict]) -> str:
 
     system_prompt = cargar_system_prompt()
 
+    # Limitar historial a los últimos 15 mensajes para reducir tokens
+    historial_reciente = historial[-15:] if len(historial) > 15 else historial
+
     # Construir mensajes para la API
     mensajes = []
-    for msg in historial:
+    for msg in historial_reciente:
         mensajes.append({
             "role": msg["role"],
             "content": msg["content"]
@@ -80,15 +87,26 @@ async def generar_respuesta(mensaje: str, historial: list[dict]) -> str:
 
     try:
         response = await client.messages.create(
-            model="claude-sonnet-4-6",
+            model=MODELO_CHAT,
             max_tokens=1024,
-            system=system_prompt,
+            # Prompt caching: el system prompt se cachea entre llamadas,
+            # reduciendo el costo de tokens de entrada repetidos
+            system=[{
+                "type": "text",
+                "text": system_prompt,
+                "cache_control": {"type": "ephemeral"}
+            }],
             messages=mensajes
         )
 
-        respuesta = response.content[0].text
-        logger.info(f"Respuesta generada ({response.usage.input_tokens} in / {response.usage.output_tokens} out)")
-        return respuesta
+        uso = response.usage
+        cache_hit = getattr(uso, "cache_read_input_tokens", 0)
+        cache_miss = getattr(uso, "cache_creation_input_tokens", 0)
+        logger.info(
+            f"Respuesta generada ({uso.input_tokens} in / {uso.output_tokens} out"
+            + (f" / {cache_hit} cache_hit / {cache_miss} cache_write)" if cache_hit or cache_miss else ")")
+        )
+        return response.content[0].text
 
     except Exception as e:
         logger.error(f"Error Claude API: {e}")
