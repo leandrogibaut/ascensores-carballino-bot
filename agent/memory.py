@@ -63,13 +63,15 @@ class Solicitud(Base):
 
 async def inicializar_db():
     """Crea las tablas si no existen y aplica migraciones defensivas."""
+    # Paso 1: crear todas las tablas según los modelos (siempre primero, transacción propia)
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
-        # Migración defensiva: agregar columna mensaje_grupo_id si no existe (SQLite no tiene IF NOT EXISTS para columnas)
-        try:
+    # Paso 2: migración defensiva en transacción separada (falla silenciosa si la columna ya existe)
+    try:
+        async with engine.begin() as conn:
             await conn.execute(text("ALTER TABLE solicitudes ADD COLUMN mensaje_grupo_id VARCHAR(100) DEFAULT ''"))
-        except Exception:
-            pass  # la columna ya existe
+    except Exception:
+        pass  # la columna ya existe
 
 
 async def guardar_mensaje(telefono: str, role: str, content: str):
