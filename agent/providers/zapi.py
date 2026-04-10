@@ -82,6 +82,13 @@ class ProveedorZapi(ProveedorWhatsApp):
             texto = body["listResponseMessage"].get("rowId", "")
         elif "text" in body:
             texto = body["text"].get("message", "")
+        elif "image" in body:
+            # Foto con caption — los técnicos suelen mandar fotos con descripción
+            texto = body["image"].get("caption", "")
+        elif "video" in body:
+            texto = body["video"].get("caption", "")
+        elif "document" in body:
+            texto = body["document"].get("caption", "")
         elif subtipo in ("audio", "ptt"):
             # Audio: Z-API provee una URL de descarga
             audio_url = body.get("audio", {}).get("audioUrl", "")
