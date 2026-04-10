@@ -47,11 +47,17 @@ ADMIN_PHONE = "5491131815195"  # Número del administrador
 bot_activo = True
 
 # ── Menú inicial ──
-MENSAJE_MENU = "👋 ¡Bienvenido/a a *Ascensores Carballino*!\n\n¿En qué podemos ayudarle?"
-BOTONES_MENU = [
-    {"id": "RECLAMO", "label": "🔧 Reclamo / Servicio Técnico"},
-    {"id": "ADM",     "label": "💼 Administración / Pagos"},
-]
+MENSAJE_MENU = (
+    "👋 ¡Bienvenido/a a *Ascensores Carballino*!\n\n"
+    "¿En qué podemos ayudarle? Responda con el número de la opción:\n\n"
+    "1️⃣ Reclamo / Servicio Técnico\n"
+    "2️⃣ Administración / Pagos"
+)
+# BOTONES_MENU desactivado — Z-API no entrega botones de forma confiable
+# BOTONES_MENU = [
+#     {"id": "RECLAMO", "label": "🔧 Reclamo / Servicio Técnico"},
+#     {"id": "ADM",     "label": "💼 Administración / Pagos"},
+# ]
 MENSAJE_ADM = (
     "En breve se comunicarán con usted de administración. "
     "Tenga en cuenta que los horarios de administración son "
@@ -219,21 +225,23 @@ async def procesar_acumulados(telefono: str):
             sesion_menu[telefono] = "reclamo"  # Conversación activa, no interrumpir
         else:
             sesion_menu[telefono] = "esperando_menu"
-            await proveedor.enviar_menu_botones(telefono, MENSAJE_MENU, BOTONES_MENU)
+            await proveedor.enviar_mensaje(telefono, MENSAJE_MENU)
             return
 
     if sesion_menu[telefono] == "esperando_menu":
-        texto_norm = texto_combinado.strip().upper()
-        if texto_norm in ("RECLAMO", "1"):
+        # Normalizar respuesta: minúsculas y sin tildes para match flexible
+        texto_norm = texto_combinado.strip().lower()
+        texto_norm = texto_norm.replace("á","a").replace("é","e").replace("í","i").replace("ó","o").replace("ú","u")
+        if texto_norm in ("reclamo", "1", "uno"):
             sesion_menu[telefono] = "reclamo"
             await procesar_mensaje_cliente(telefono, "Hola, quiero hacer un reclamo o solicitar servicio técnico.")
-        elif texto_norm in ("ADM", "2", "ADMINISTRACION", "ADMINISTRACIÓN", "PAGOS"):
+        elif texto_norm in ("adm", "2", "dos", "administracion", "pagos"):
             sesion_menu[telefono] = "administracion"
             await guardar_mensaje(telefono, "user", texto_combinado)
             await guardar_mensaje(telefono, "assistant", MENSAJE_ADM)
             await proveedor.enviar_mensaje(telefono, MENSAJE_ADM)
         else:
-            await proveedor.enviar_menu_botones(telefono, MENSAJE_MENU, BOTONES_MENU)
+            await proveedor.enviar_mensaje(telefono, MENSAJE_MENU)
         return
 
     if sesion_menu[telefono] == "administracion":
