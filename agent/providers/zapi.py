@@ -100,6 +100,11 @@ class ProveedorZapi(ProveedorWhatsApp):
             # Llamada en curso — ignorar, ya respondemos en CALL_MISSED_VOICE
             return []
         else:
+            pass  # tipo desconocido — continuar para que fromMe=True llegue a main.py
+
+        # Mensajes de cliente sin texto reconocido: descartar
+        # Mensajes propios (fromMe=True) sin texto: pasar igual para registrar intervención humana
+        if not texto and not es_propio:
             return []
 
         mensajes.append(MensajeEntrante(

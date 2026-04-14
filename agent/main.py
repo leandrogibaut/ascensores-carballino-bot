@@ -25,6 +25,8 @@ from agent.memory import (
     buscar_solicitud_por_id, tiene_mensajes_recientes,
     obtener_solicitud_activa_por_telefono,
     buscar_solicitud_por_mensaje_grupo,
+    marcar_intervencion_humana,
+    hay_intervencion_reciente,
 )
 from agent.providers import obtener_proveedor
 from agent.tools import notificar_grupo_solicitud
@@ -290,7 +292,16 @@ async def webhook_handler(request: Request):
         mensajes = await proveedor.parsear_webhook(request)
 
         for msg in mensajes:
-            if msg.es_propio or not msg.texto:
+            # Mensajes propios (fromMe=True): registrar intervención humana y descartar
+            if msg.es_propio:
+                telefono_norm_p = msg.telefono.replace("-group", "").replace("@g.us", "")
+                grupo_norm_p = GRUPO_INTERNO.replace("-group", "").replace("@g.us", "")
+                if not (telefono_norm_p == grupo_norm_p and grupo_norm_p) and msg.telefono:
+                    await marcar_intervencion_humana(msg.telefono)
+                    logger.info(f"Intervención humana detectada en conversación con {msg.telefono}, bot silenciado 6hs")
+                continue
+
+            if not msg.texto:
                 continue
 
             # ── Comandos del administrador ──
@@ -354,6 +365,14 @@ async def webhook_handler(request: Request):
                 )
                 await proveedor.enviar_mensaje(msg.telefono, aviso)
                 continue
+
+            # ── Chequeo de intervención humana (solo chats 1-a-1) ──
+            telefono_norm_iv = msg.telefono.replace("-group", "").replace("@g.us", "")
+            grupo_norm_iv = GRUPO_INTERNO.replace("-group", "").replace("@g.us", "")
+            if not (telefono_norm_iv == grupo_norm_iv and grupo_norm_iv):
+                if await hay_intervencion_reciente(msg.telefono):
+                    logger.info(f"Mensaje de {msg.telefono} ignorado: intervención humana reciente")
+                    continue
 
             logger.info(f"Mensaje de {msg.telefono}: {msg.texto}")
 

@@ -61,12 +61,20 @@ class Solicitud(Base):
     timestamp: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
 
+class IntervencionHumana(Base):
+    """Registro de intervenciones humanas en conversaciones 1-a-1."""
+    __tablename__ = "intervenciones_humanas"
+
+    telefono: Mapped[str] = mapped_column(String(50), primary_key=True)
+    timestamp: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
 async def inicializar_db():
     """Crea las tablas si no existen y aplica migraciones defensivas."""
     # Paso 1: crear todas las tablas según los modelos (siempre primero, transacción propia)
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
-    # Paso 2: migración defensiva en transacción separada (falla silenciosa si la columna ya existe)
+    # Paso 2: migración defensiva — columna mensaje_grupo_id (tablas pre-existentes sin ella)
     try:
         async with engine.begin() as conn:
             await conn.execute(text("ALTER TABLE solicitudes ADD COLUMN mensaje_grupo_id VARCHAR(100) DEFAULT ''"))
@@ -264,3 +272,29 @@ async def actualizar_mensaje_grupo_id(solicitud_id: int, mensaje_grupo_id: str):
         if solicitud:
             solicitud.mensaje_grupo_id = mensaje_grupo_id
             await session.commit()
+
+
+async def marcar_intervencion_humana(telefono: str):
+    """Guarda o actualiza el timestamp de intervención humana para una conversación."""
+    async with async_session() as session:
+        query = select(IntervencionHumana).where(IntervencionHumana.telefono == telefono)
+        result = await session.execute(query)
+        registro = result.scalar_one_or_none()
+        if registro:
+            registro.timestamp = datetime.utcnow()
+        else:
+            session.add(IntervencionHumana(telefono=telefono, timestamp=datetime.utcnow()))
+        await session.commit()
+
+
+async def hay_intervencion_reciente(telefono: str, horas: int = 6) -> bool:
+    """Retorna True si hubo intervención humana en esa conversación en las últimas N horas."""
+    from datetime import timedelta
+    cutoff = datetime.utcnow() - timedelta(hours=horas)
+    async with async_session() as session:
+        query = select(IntervencionHumana).where(
+            (IntervencionHumana.telefono == telefono) &
+            (IntervencionHumana.timestamp >= cutoff)
+        )
+        result = await session.execute(query)
+        return result.scalar_one_or_none() is not None
