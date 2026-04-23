@@ -20,6 +20,7 @@ class MensajeEntrante:
     es_propio: bool     # True si lo envió el agente (se ignora)
     reference_message_id: str | None = None  # ID del mensaje citado (reply)
     message_id: str | None = None            # ID propio del mensaje (para tracking)
+    nombre_remitente: str = ""               # Nombre del remitente (útil en grupos)
 
 
 class ProveedorWhatsApp(ABC):

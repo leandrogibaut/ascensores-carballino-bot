@@ -69,6 +69,18 @@ class IntervencionHumana(Base):
     timestamp: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
 
+class MensajeGrupo(Base):
+    """Mensaje recibido en el grupo interno de técnicos."""
+    __tablename__ = "mensajes_grupo"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    telefono_remitente: Mapped[str] = mapped_column(String(50))
+    nombre_remitente: Mapped[str] = mapped_column(String(100), default="")
+    texto: Mapped[str] = mapped_column(Text)
+    fecha: Mapped[date] = mapped_column(Date, default=date.today)
+    timestamp: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
 async def inicializar_db():
     """Crea las tablas si no existen y aplica migraciones defensivas."""
     # Paso 1: crear todas las tablas según los modelos (siempre primero, transacción propia)
@@ -298,3 +310,29 @@ async def hay_intervencion_reciente(telefono: str, horas: int = 6) -> bool:
         )
         result = await session.execute(query)
         return result.scalar_one_or_none() is not None
+
+
+async def guardar_mensaje_grupo(telefono: str, nombre: str, texto: str):
+    """Guarda un mensaje recibido en el grupo interno."""
+    async with async_session() as session:
+        msg = MensajeGrupo(
+            telefono_remitente=telefono,
+            nombre_remitente=nombre,
+            texto=texto,
+            fecha=date.today(),
+            timestamp=datetime.utcnow(),
+        )
+        session.add(msg)
+        await session.commit()
+
+
+async def obtener_mensajes_grupo_del_dia() -> list[MensajeGrupo]:
+    """Retorna todos los mensajes del grupo del día actual."""
+    async with async_session() as session:
+        query = (
+            select(MensajeGrupo)
+            .where(MensajeGrupo.fecha == date.today())
+            .order_by(MensajeGrupo.timestamp.asc())
+        )
+        result = await session.execute(query)
+        return result.scalars().all()

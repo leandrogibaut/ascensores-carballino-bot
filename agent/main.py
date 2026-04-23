@@ -11,6 +11,7 @@ import re
 import logging
 from contextlib import asynccontextmanager
 from datetime import datetime
+from zoneinfo import ZoneInfo
 from fastapi import FastAPI, Request, HTTPException
 from fastapi.responses import PlainTextResponse
 from dotenv import load_dotenv
@@ -27,6 +28,7 @@ from agent.memory import (
     buscar_solicitud_por_mensaje_grupo,
     marcar_intervencion_humana,
     hay_intervencion_reciente,
+    guardar_mensaje_grupo, obtener_mensajes_grupo_del_dia,
 )
 from agent.providers import obtener_proveedor
 from agent.tools import notificar_grupo_solicitud
@@ -49,38 +51,61 @@ ADMIN_PHONE = "5491131815195"  # Número del administrador
 bot_activo = True
 
 # ── Menú inicial ──
-MENSAJE_MENU = "👋 ¡Bienvenido/a a *Ascensores Carballino*!\n\n¿En qué podemos ayudarle?"
+MENSAJE_MENU = (
+    "Bienvenidos a Ascensores Carballino 🏢\n\n"
+    "Pulse la opción correcta para ser atendido:\n\n"
+    "*1* — Reclamo / Servicio Técnico\n"
+    "*2* — Oficina / Administración"
+)
 BOTONES_MENU = [
-    {"id": "RECLAMO", "label": "🔧 Reclamo / Servicio Técnico"},
-    {"id": "ADM",     "label": "💼 Administración / Pagos"},
+    {"id": "RECLAMO", "label": "1 - Reclamo / Servicio Técnico"},
+    {"id": "ADM",     "label": "2 - Oficina / Administración"},
 ]
 MENSAJE_ADM = (
-    "En breve se comunicarán con usted de administración. "
-    "Tenga en cuenta que los horarios de administración son "
-    "de 8 a 18hs de lunes a viernes."
+    "En breve se comunicarán con usted desde la oficina. "
+    "Nuestro horario de atención es de lunes a viernes de 8 a 18hs."
 )
+MENSAJE_ADM_FUERA_HORARIO = (
+    "Gracias por comunicarse con Ascensores Carballino.\n\n"
+    "En este momento nos encontramos fuera del horario de atención.\n"
+    "Nuestro horario es de lunes a viernes de 8 a 18hs.\n\n"
+    "Puede dejarnos su consulta y le responderemos el próximo día hábil."
+)
+
+TZ_AR = ZoneInfo("America/Argentina/Buenos_Aires")
+
+
+def oficina_esta_disponible() -> bool:
+    """Retorna True si es día hábil entre 8:00 y 18:00 hora Argentina."""
+    ahora = datetime.now(TZ_AR)
+    es_dia_habil = ahora.weekday() < 5  # 0=lunes … 4=viernes
+    es_horario = 8 <= ahora.hour < 18
+    return es_dia_habil and es_horario
 # Estado del menú por teléfono: None = no visto | "esperando_menu" | "reclamo" | "administracion"
 sesion_menu: dict[str, str] = {}
 
-def formatear_resumen_solicitud(datos_raw: str) -> str:
-    """Convierte el tag interno de solicitud en un mensaje legible para el grupo."""
-    campos = {
-        "tipo": "📋 Tipo",
-        "nombre": "👤 Nombre",
-        "tel": "📞 Teléfono",
-        "consorcio": "🏢 Consorcio/Empresa",
-        "direccion": "📍 Dirección",
-        "quien_abre": "🔑 Quién abre",
-        "piso_depto": "🏠 Piso/Depto",
-    }
-    lineas = []
+def formatear_resumen_solicitud(datos_raw: str) -> tuple[str, dict]:
+    """Convierte el tag interno de solicitud en un párrafo corto para el grupo."""
     extraido = {}
-    for clave, etiqueta in campos.items():
+    for clave in ("tipo", "nombre", "tel", "consorcio", "direccion", "quien_abre", "piso_depto"):
         match = re.search(rf'{clave}="([^"]*)"', datos_raw)
         if match and match.group(1):
-            lineas.append(f"{etiqueta}: {match.group(1)}")
             extraido[clave] = match.group(1)
-    return "\n".join(lineas) if lineas else datos_raw, extraido
+
+    direccion = extraido.get("direccion", "")
+    tipo = extraido.get("tipo", "")
+    quien_abre = extraido.get("quien_abre", "")
+    piso_depto = extraido.get("piso_depto", "")
+
+    partes = [p for p in [direccion, tipo] if p]
+    if quien_abre:
+        abre = f"Abre {quien_abre}"
+        if piso_depto and piso_depto.upper() != "N/A":
+            abre += f" ({piso_depto})"
+        partes.append(abre)
+
+    resumen = " - ".join(partes) if partes else datos_raw
+    return resumen, extraido
 
 
 def analizar_mensaje_tecnico(texto: str) -> tuple[str, str]:
@@ -144,6 +169,23 @@ async def enviar_resumen_diario():
 
     await proveedor.enviar_mensaje(grupo_zapi, "\n".join(lineas))
     logger.info(f"Resumen diario enviado al grupo: {len(solicitudes)} solicitudes")
+
+    # Enviar JSON con todos los mensajes del grupo del día a +5491122636490
+    import json as _json
+    mensajes_grupo = await obtener_mensajes_grupo_del_dia()
+    if mensajes_grupo:
+        payload = [
+            {
+                "telefono": m.telefono_remitente,
+                "nombre": m.nombre_remitente,
+                "texto": m.texto,
+                "hora": m.timestamp.strftime("%H:%M"),
+            }
+            for m in mensajes_grupo
+        ]
+        texto_json = _json.dumps(payload, ensure_ascii=False, indent=2)
+        await proveedor.enviar_mensaje("5491122636490", texto_json)
+        logger.info(f"JSON de mensajes del grupo enviado a +5491122636490 ({len(payload)} mensajes)")
 
 
 # ── Debounce: acumular mensajes por teléfono antes de procesar ──
@@ -228,19 +270,32 @@ async def procesar_acumulados(telefono: str):
         texto_norm = texto_combinado.strip().upper()
         if texto_norm in ("RECLAMO", "1"):
             sesion_menu[telefono] = "reclamo"
-            await procesar_mensaje_cliente(telefono, "Hola, quiero hacer un reclamo o solicitar servicio técnico.")
-        elif texto_norm in ("ADM", "2", "ADMINISTRACION", "ADMINISTRACIÓN", "PAGOS"):
+            mensaje_inicial = (
+                "Hola, soy Olivia de Ascensores Carballino 💎\n\n"
+                "¿De qué dirección se comunica? ¿Cuál es exactamente la falla? "
+                "¿Quién puede abrir? Indicame piso y departamento así enviamos "
+                "a los técnicos a solucionar el reclamo.\n\n"
+                "⚠️ Si se trata de una emergencia, por favor llame por teléfono "
+                "al 4301-3967 o al 1565024510."
+            )
+            await guardar_mensaje(telefono, "assistant", mensaje_inicial)
+            await proveedor.enviar_mensaje(telefono, mensaje_inicial)
+        elif texto_norm in ("ADM", "2", "ADMINISTRACION", "ADMINISTRACIÓN", "PAGOS", "OFICINA"):
             sesion_menu[telefono] = "administracion"
             await guardar_mensaje(telefono, "user", texto_combinado)
-            await guardar_mensaje(telefono, "assistant", MENSAJE_ADM)
-            await proveedor.enviar_mensaje(telefono, MENSAJE_ADM)
+            if oficina_esta_disponible():
+                await guardar_mensaje(telefono, "assistant", MENSAJE_ADM)
+                await proveedor.enviar_mensaje(telefono, MENSAJE_ADM)
+            else:
+                await guardar_mensaje(telefono, "assistant", MENSAJE_ADM_FUERA_HORARIO)
+                await proveedor.enviar_mensaje(telefono, MENSAJE_ADM_FUERA_HORARIO)
         else:
             await proveedor.enviar_menu_botones(telefono, MENSAJE_MENU, BOTONES_MENU)
         return
 
     if sesion_menu[telefono] == "administracion":
-        # Si vuelve a escribir después de elegir administración, repetir el mensaje
-        await proveedor.enviar_mensaje(telefono, MENSAJE_ADM)
+        msg = MENSAJE_ADM if oficina_esta_disponible() else MENSAJE_ADM_FUERA_HORARIO
+        await proveedor.enviar_mensaje(telefono, msg)
         return
 
     # "reclamo" → flujo normal con Olivia
@@ -270,6 +325,21 @@ app = FastAPI(
 async def health_check():
     """Endpoint de salud para Railway/monitoreo."""
     return {"status": "ok", "service": "agentkit", "agente": "Olivia"}
+
+
+@app.get("/api/mensajes-grupo-hoy")
+async def mensajes_grupo_hoy():
+    """Retorna todos los mensajes del grupo interno recibidos hoy."""
+    mensajes = await obtener_mensajes_grupo_del_dia()
+    return [
+        {
+            "telefono": m.telefono_remitente,
+            "nombre": m.nombre_remitente,
+            "texto": m.texto,
+            "hora": m.timestamp.strftime("%H:%M"),
+        }
+        for m in mensajes
+    ]
 
 
 @app.get("/webhook")
@@ -327,6 +397,8 @@ async def webhook_handler(request: Request):
             telefono_norm = msg.telefono.replace("-group", "").replace("@g.us", "")
             grupo_norm = GRUPO_INTERNO.replace("-group", "").replace("@g.us", "")
             if telefono_norm == grupo_norm and grupo_norm:
+                await guardar_mensaje_grupo(msg.telefono, msg.nombre_remitente, msg.texto)
+
                 solicitud = None
 
                 # Prioridad 1: si es un reply, buscar por el messageId al que responde

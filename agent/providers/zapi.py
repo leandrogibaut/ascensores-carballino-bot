@@ -114,6 +114,7 @@ class ProveedorZapi(ProveedorWhatsApp):
             es_propio=es_propio,
             reference_message_id=body.get("referenceMessageId"),  # 2A: ID del mensaje citado (reply)
             message_id=body.get("messageId"),                     # 2A: ID propio del mensaje
+            nombre_remitente=body.get("senderName", ""),
         ))
         return mensajes
 

@@ -1,22 +1,25 @@
-# agent/brain.py — Cerebro del agente: conexión con Claude API
+# agent/brain.py — Cerebro del agente: conexión con Ollama (compatible OpenAI)
 # Generado por AgentKit
 
 """
 Lógica de IA del agente. Lee el system prompt de prompts.yaml
-y genera respuestas usando la API de Anthropic Claude.
+y genera respuestas usando la API de Ollama (formato compatible con OpenAI).
 """
 
 import os
 import yaml
 import logging
-from anthropic import AsyncAnthropic
+from openai import AsyncOpenAI
 from dotenv import load_dotenv
 
 load_dotenv()
 logger = logging.getLogger("agentkit")
 
-# Cliente de Anthropic
-client = AsyncAnthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
+# Cliente Ollama con interfaz compatible OpenAI
+client = AsyncOpenAI(
+    base_url="https://ollama.com/v1",
+    api_key=os.getenv("OLLAMA_API_KEY"),
+)
 
 
 def cargar_config_prompts() -> dict:
@@ -47,8 +50,7 @@ def obtener_mensaje_fallback() -> str:
     return config.get("fallback_message", "Disculpe, no pude interpretar su mensaje. ¿Podría reformularlo, por favor?")
 
 
-# Modelo principal para el chat (rápido y económico)
-MODELO_CHAT = "claude-haiku-4-5-20251001"
+MODELO_CHAT = "kimi-k2.6"
 
 
 async def generar_respuesta(mensaje: str, historial: list[dict]) -> str:
@@ -86,28 +88,16 @@ async def generar_respuesta(mensaje: str, historial: list[dict]) -> str:
     })
 
     try:
-        response = await client.messages.create(
+        response = await client.chat.completions.create(
             model=MODELO_CHAT,
             max_tokens=1024,
-            # Prompt caching: el system prompt se cachea entre llamadas,
-            # reduciendo el costo de tokens de entrada repetidos
-            system=[{
-                "type": "text",
-                "text": system_prompt,
-                "cache_control": {"type": "ephemeral"}
-            }],
-            messages=mensajes
+            messages=[{"role": "system", "content": system_prompt}] + mensajes,
         )
 
         uso = response.usage
-        cache_hit = getattr(uso, "cache_read_input_tokens", 0)
-        cache_miss = getattr(uso, "cache_creation_input_tokens", 0)
-        logger.info(
-            f"Respuesta generada ({uso.input_tokens} in / {uso.output_tokens} out"
-            + (f" / {cache_hit} cache_hit / {cache_miss} cache_write)" if cache_hit or cache_miss else ")")
-        )
-        return response.content[0].text
+        logger.info(f"Respuesta generada ({uso.prompt_tokens} in / {uso.completion_tokens} out)")
+        return response.choices[0].message.content
 
     except Exception as e:
-        logger.error(f"Error Claude API: {e}")
+        logger.error(f"Error Ollama API: {e}")
         return obtener_mensaje_error()
