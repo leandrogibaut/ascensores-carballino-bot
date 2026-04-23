@@ -90,7 +90,7 @@ async def generar_respuesta(mensaje: str, historial: list[dict]) -> str:
     try:
         response = await client.chat.completions.create(
             model=MODELO_CHAT,
-            max_tokens=1024,
+            max_tokens=2048,
             messages=[{"role": "system", "content": system_prompt}] + mensajes,
         )
 
