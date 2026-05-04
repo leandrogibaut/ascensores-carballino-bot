@@ -206,13 +206,17 @@ async def actualizar_estado_solicitud(solicitud_id: int, estado: str, notas: str
 
 
 async def obtener_solicitud_activa_por_telefono(telefono: str) -> "Solicitud | None":
-    """Retorna la solicitud registrada hoy para este teléfono, si ya existe."""
+    """Retorna la solicitud del teléfono creada en los últimos 10 minutos, si existe.
+    Evita duplicados inmediatos sin bloquear nuevos reclamos del mismo cliente el mismo día.
+    """
+    from datetime import timedelta
+    cutoff = datetime.utcnow() - timedelta(minutes=10)
     async with async_session() as session:
         query = (
             select(Solicitud)
             .where(
                 (Solicitud.telefono_cliente == telefono) &
-                (Solicitud.fecha == date.today())
+                (Solicitud.timestamp >= cutoff)
             )
             .order_by(Solicitud.timestamp.desc())
             .limit(1)
