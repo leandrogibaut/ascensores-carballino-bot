@@ -62,26 +62,44 @@ def oficina_esta_disponible() -> bool:
     return es_dia_habil and es_horario
 
 def formatear_resumen_solicitud(datos_raw: str) -> tuple[str, dict]:
-    """Convierte el tag interno de solicitud en un párrafo corto para el grupo."""
+    """Convierte el tag interno de solicitud en un párrafo corto para el grupo.
+    Soporta formato nuevo (texto libre) y formato viejo (clave="valor").
+    """
+    # Detectar formato viejo por presencia de claves conocidas
+    es_formato_viejo = bool(re.search(r'(direccion|tipo|quien_abre)="', datos_raw))
+
+    if es_formato_viejo:
+        extraido = {}
+        for clave in ("tipo", "nombre", "tel", "consorcio", "direccion", "quien_abre", "piso_depto"):
+            match = re.search(rf'{clave}="([^"]*)"', datos_raw)
+            if match and match.group(1):
+                extraido[clave] = match.group(1)
+
+        direccion = extraido.get("direccion", "")
+        tipo = extraido.get("tipo", "")
+        quien_abre = extraido.get("quien_abre", "")
+        piso_depto = extraido.get("piso_depto", "")
+
+        partes = [p for p in [direccion, tipo] if p]
+        if quien_abre:
+            abre = f"Abre {quien_abre}"
+            if piso_depto and piso_depto.upper() != "N/A":
+                abre += f" ({piso_depto})"
+            partes.append(abre)
+
+        resumen = " - ".join(partes) if partes else datos_raw
+        return resumen, extraido
+
+    # Formato nuevo: texto libre — limpiar y extraer partes por punto
+    resumen = " ".join(datos_raw.split())  # colapsa saltos de línea y espacios múltiples
+    partes = [p.strip() for p in resumen.split(".") if p.strip()]
     extraido = {}
-    for clave in ("tipo", "nombre", "tel", "consorcio", "direccion", "quien_abre", "piso_depto"):
-        match = re.search(rf'{clave}="([^"]*)"', datos_raw)
-        if match and match.group(1):
-            extraido[clave] = match.group(1)
-
-    direccion = extraido.get("direccion", "")
-    tipo = extraido.get("tipo", "")
-    quien_abre = extraido.get("quien_abre", "")
-    piso_depto = extraido.get("piso_depto", "")
-
-    partes = [p for p in [direccion, tipo] if p]
-    if quien_abre:
-        abre = f"Abre {quien_abre}"
-        if piso_depto and piso_depto.upper() != "N/A":
-            abre += f" ({piso_depto})"
-        partes.append(abre)
-
-    resumen = " - ".join(partes) if partes else datos_raw
+    if len(partes) >= 1:
+        extraido["direccion"] = partes[0]
+    if len(partes) >= 2:
+        extraido["tipo"] = partes[1]
+    if len(partes) >= 3:
+        extraido["quien_abre"] = ". ".join(partes[2:])
     return resumen, extraido
 
 
