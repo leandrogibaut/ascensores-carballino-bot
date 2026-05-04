@@ -101,3 +101,20 @@ async def generar_respuesta(mensaje: str, historial: list[dict]) -> str:
     except Exception as e:
         logger.error(f"Error Ollama API: {e}")
         return obtener_mensaje_error()
+
+
+async def clasificar_intencion(texto: str) -> str:
+    try:
+        response = await client.chat.completions.create(
+            model=MODELO_CHAT,
+            max_tokens=10,
+            messages=[
+                {"role": "system", "content": "Respondé SOLO con una palabra: reclamo, administracion o desconocido. Sin explicaciones."},
+                {"role": "user", "content": texto}
+            ]
+        )
+        resultado = response.choices[0].message.content.strip().lower()
+        return resultado if resultado in ["reclamo", "administracion", "desconocido"] else "desconocido"
+    except Exception as e:
+        logger.error(f"Error clasificando: {e}")
+        return "desconocido"

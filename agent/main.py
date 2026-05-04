@@ -50,28 +50,6 @@ ADMIN_PHONE = "5491131815195"  # Número del administrador
 # Estado del bot (activo por defecto)
 bot_activo = True
 
-# ── Menú inicial ──
-MENSAJE_MENU = (
-    "Bienvenidos a Ascensores Carballino 🏢\n\n"
-    "Pulse la opción correcta para ser atendido:\n\n"
-    "*1* — Reclamo / Servicio Técnico\n"
-    "*2* — Oficina / Administración"
-)
-BOTONES_MENU = [
-    {"id": "RECLAMO", "label": "1 - Reclamo / Servicio Técnico"},
-    {"id": "ADM",     "label": "2 - Oficina / Administración"},
-]
-MENSAJE_ADM = (
-    "En breve se comunicarán con usted desde la oficina. "
-    "Nuestro horario de atención es de lunes a viernes de 8 a 18hs."
-)
-MENSAJE_ADM_FUERA_HORARIO = (
-    "Gracias por comunicarse con Ascensores Carballino.\n\n"
-    "En este momento nos encontramos fuera del horario de atención.\n"
-    "Nuestro horario es de lunes a viernes de 8 a 18hs.\n\n"
-    "Puede dejarnos su consulta y le responderemos el próximo día hábil."
-)
-
 TZ_AR = ZoneInfo("America/Argentina/Buenos_Aires")
 
 
@@ -81,8 +59,6 @@ def oficina_esta_disponible() -> bool:
     es_dia_habil = ahora.weekday() < 5  # 0=lunes … 4=viernes
     es_horario = 8 <= ahora.hour < 18
     return es_dia_habil and es_horario
-# Estado del menú por teléfono: None = no visto | "esperando_menu" | "reclamo" | "administracion"
-sesion_menu: dict[str, str] = {}
 
 def formatear_resumen_solicitud(datos_raw: str) -> tuple[str, dict]:
     """Convierte el tag interno de solicitud en un párrafo corto para el grupo."""
@@ -189,9 +165,27 @@ async def enviar_resumen_diario():
 
 
 # ── Debounce: acumular mensajes por teléfono antes de procesar ──
-DEBOUNCE_SEGUNDOS = 10
+DEBOUNCE_SEGUNDOS = 10          # conversación activa (historial reciente)
+DEBOUNCE_NUEVO_SEGUNDOS = 120   # primer mensaje / conversación nueva (sin historial)
 mensajes_pendientes: dict[str, list[str]] = {}
 tareas_pendientes: dict[str, "asyncio.Task"] = {}
+
+conversaciones_estado: dict[str, dict] = {}
+
+def marcar_estado_conversacion(telefono: str, estado: str):
+    conversaciones_estado[telefono] = {"estado": estado, "timestamp": datetime.now()}
+
+def obtener_estado_conversacion(telefono: str) -> str | None:
+    datos = conversaciones_estado.get(telefono)
+    if not datos:
+        return None
+    if (datetime.now() - datos["timestamp"]).total_seconds() > 86400:
+        del conversaciones_estado[telefono]
+        return None
+    return datos["estado"]
+
+def limpiar_estado_conversacion(telefono: str):
+    conversaciones_estado.pop(telefono, None)
 
 scheduler = None
 
@@ -241,65 +235,64 @@ async def procesar_mensaje_cliente(telefono: str, texto: str):
 
 
 async def procesar_acumulados(telefono: str):
-    """Espera el debounce y procesa todos los mensajes acumulados juntos."""
-    import asyncio
-    await asyncio.sleep(DEBOUNCE_SEGUNDOS)
-
+    from agent.brain import clasificar_intencion
+    debounce = DEBOUNCE_SEGUNDOS if await tiene_mensajes_recientes(telefono) else DEBOUNCE_NUEVO_SEGUNDOS
+    await asyncio.sleep(debounce)
     textos = mensajes_pendientes.pop(telefono, [])
     tareas_pendientes.pop(telefono, None)
-
     if not textos:
         return
-
     texto_combinado = "\n".join(textos)
-    logger.info(f"Procesando {len(textos)} mensaje(s) acumulados de {telefono}: {texto_combinado}")
-
-    # ── Lógica del menú inicial ──
-    estado = sesion_menu.get(telefono)
-
-    if estado is None or (estado == "reclamo" and not await tiene_mensajes_recientes(telefono)):
-        # Sin estado previo, o la sesión expiró (más de 4hs sin actividad) → menú nuevo
-        if await tiene_mensajes_recientes(telefono):
-            sesion_menu[telefono] = "reclamo"  # Conversación activa, no interrumpir
+    logger.info(f"Procesando {len(textos)} mensaje(s) de {telefono}: {texto_combinado}")
+    if await hay_intervencion_reciente(telefono):
+        logger.info(f"{telefono} silenciado por intervención humana")
+        return
+    estado_conv = obtener_estado_conversacion(telefono)
+    if estado_conv == "pendiente_admin":
+        logger.info(f"{telefono} en pendiente_admin")
+        return
+    if estado_conv == "esperando_consulta_admin":
+        marcar_estado_conversacion(telefono, "pendiente_admin")
+        return
+    if estado_conv == "reclamo":
+        await procesar_mensaje_cliente(telefono, texto_combinado)
+        return
+    intencion = await clasificar_intencion(texto_combinado)
+    if intencion == "reclamo":
+        marcar_estado_conversacion(telefono, "reclamo")
+        mensaje_inicial = (
+            "Hola, soy Olivia de Ascensores Carballino 👋 "
+            "Para registrar el reclamo necesito algunos datos:\n\n"
+            "• *¿Cuál es la dirección del edificio?*\n"
+            "• *¿Qué problema tiene el ascensor?*\n"
+            "• *¿Quién abre? (encargado, administrador, etc.) ¿En qué horarios?*\n\n"
+            "Puede respondernos con toda la información junta o por partes, no se preocupe 😊"
+        )
+        await guardar_mensaje(telefono, "assistant", mensaje_inicial)
+        await proveedor.enviar_mensaje(telefono, mensaje_inicial)
+        return
+    if intencion == "administracion":
+        marcar_estado_conversacion(telefono, "esperando_consulta_admin")
+        if oficina_esta_disponible():
+            mensaje_admin = "Hola 👋 Por favor, ¿cuál es su consulta? En breve la derivamos al área correspondiente."
         else:
-            sesion_menu[telefono] = "esperando_menu"
-            await proveedor.enviar_menu_botones(telefono, MENSAJE_MENU, BOTONES_MENU)
-            return
-
-    if sesion_menu[telefono] == "esperando_menu":
-        texto_norm = texto_combinado.strip().upper()
-        if texto_norm in ("RECLAMO", "1"):
-            sesion_menu[telefono] = "reclamo"
-            mensaje_inicial = (
-                "Hola, soy Olivia de Ascensores Carballino 💎\n\n"
-                "¿De qué dirección se comunica? ¿Cuál es exactamente la falla? "
-                "¿Quién puede abrir? Indicame piso y departamento así enviamos "
-                "a los técnicos a solucionar el reclamo.\n\n"
-                "⚠️ Si se trata de una emergencia, por favor llame por teléfono "
-                "al 4301-3967 o al 1565024510."
+            mensaje_admin = (
+                "Gracias por comunicarse con Ascensores Carballino. "
+                "El área de administración atiende de lunes a viernes de 8 a 18hs. "
+                "Por favor deje su consulta y será atendida el próximo día hábil 📋"
             )
-            await guardar_mensaje(telefono, "assistant", mensaje_inicial)
-            await proveedor.enviar_mensaje(telefono, mensaje_inicial)
-        elif texto_norm in ("ADM", "2", "ADMINISTRACION", "ADMINISTRACIÓN", "PAGOS", "OFICINA"):
-            sesion_menu[telefono] = "administracion"
-            await guardar_mensaje(telefono, "user", texto_combinado)
-            if oficina_esta_disponible():
-                await guardar_mensaje(telefono, "assistant", MENSAJE_ADM)
-                await proveedor.enviar_mensaje(telefono, MENSAJE_ADM)
-            else:
-                await guardar_mensaje(telefono, "assistant", MENSAJE_ADM_FUERA_HORARIO)
-                await proveedor.enviar_mensaje(telefono, MENSAJE_ADM_FUERA_HORARIO)
-        else:
-            await proveedor.enviar_menu_botones(telefono, MENSAJE_MENU, BOTONES_MENU)
+        await guardar_mensaje(telefono, "assistant", mensaje_admin)
+        await proveedor.enviar_mensaje(telefono, mensaje_admin)
         return
-
-    if sesion_menu[telefono] == "administracion":
-        msg = MENSAJE_ADM if oficina_esta_disponible() else MENSAJE_ADM_FUERA_HORARIO
-        await proveedor.enviar_mensaje(telefono, msg)
-        return
-
-    # "reclamo" → flujo normal con Olivia
-    await procesar_mensaje_cliente(telefono, texto_combinado)
+    marcar_estado_conversacion(telefono, "esperando_intencion")
+    mensaje_desconocido = (
+        "Hola, soy Olivia de Ascensores Carballino 👋 "
+        "¿Me puede indicar si se trata de un *reclamo técnico* "
+        "o una *consulta administrativa*?"
+    )
+    await guardar_mensaje(telefono, "assistant", mensaje_desconocido)
+    await proveedor.enviar_mensaje(telefono, mensaje_desconocido)
+    return
 
 
 @asynccontextmanager
