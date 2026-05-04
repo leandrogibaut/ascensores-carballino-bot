@@ -50,6 +50,7 @@ PORT = int(os.getenv("PORT", 8000))
 GRUPO_INTERNO = os.getenv("WHAPI_GROUP_ID", "")
 ADMIN_PHONE = "5491131815195"  # Número del administrador
 TELEFONOS_EXCLUIDOS = {"5491122636490"}  # No reciben respuestas automáticas
+REPORTE_DIARIO_TELEFONO = "5491122636490"  # Destinatario del reporte diario
 
 # Estado del bot (activo por defecto)
 bot_activo = True
@@ -136,60 +137,16 @@ def analizar_mensaje_tecnico(texto: str) -> tuple[str, str]:
 
 
 async def enviar_resumen_diario():
-    """Genera y envía el resumen del día al grupo interno a las 20:00hs."""
-    solicitudes = await obtener_solicitudes_del_dia()
-    hoy = datetime.now().strftime("%d/%m/%Y")
-
-    grupo_zapi = GRUPO_INTERNO.replace("@g.us", "-group")
-    if not solicitudes:
-        msg = f"📊 *RESUMEN DEL DÍA — {hoy}*\n\nSin solicitudes registradas hoy."
-        await proveedor.enviar_mensaje(grupo_zapi, msg)
-        return
-
-    resueltos = [s for s in solicitudes if s.estado == "resuelto"]
-    pendientes_nota = [s for s in solicitudes if s.estado == "pendiente_con_nota"]
-    pendientes = [s for s in solicitudes if s.estado == "pendiente"]
-
-    lineas = [f"📊 *RESUMEN DEL DÍA — {hoy}*", f"Total: {len(solicitudes)} solicitud(es)\n"]
-
-    if resueltos:
-        lineas.append(f"✅ *RESUELTOS ({len(resueltos)})*")
-        for s in resueltos:
-            lineas.append(f"  • {s.consorcio or s.nombre} — {s.direccion}")
-        lineas.append("")
-
-    if pendientes_nota:
-        lineas.append(f"⚠️ *PENDIENTES CON NOTA ({len(pendientes_nota)})*")
-        for s in pendientes_nota:
-            lineas.append(f"  • {s.consorcio or s.nombre} — {s.direccion}")
-            if s.notas_tecnico:
-                lineas.append(f"    → {s.notas_tecnico}")
-        lineas.append("")
-
-    if pendientes:
-        lineas.append(f"❌ *SIN RESPUESTA ({len(pendientes)})*")
-        for s in pendientes:
-            lineas.append(f"  • {s.consorcio or s.nombre} — {s.direccion} ({s.tipo})")
-
-    await proveedor.enviar_mensaje(grupo_zapi, "\n".join(lineas))
-    logger.info(f"Resumen diario enviado al grupo: {len(solicitudes)} solicitudes")
-
-    # Enviar JSON con todos los mensajes del grupo del día a +5491122636490
-    import json as _json
-    mensajes_grupo = await obtener_mensajes_grupo_del_dia()
-    if mensajes_grupo:
-        payload = [
-            {
-                "telefono": m.telefono_remitente,
-                "nombre": m.nombre_remitente,
-                "texto": m.texto,
-                "hora": m.timestamp.strftime("%H:%M"),
-            }
-            for m in mensajes_grupo
-        ]
-        texto_json = _json.dumps(payload, ensure_ascii=False, indent=2)
-        await proveedor.enviar_mensaje("5491122636490", texto_json)
-        logger.info(f"JSON de mensajes del grupo enviado a +5491122636490 ({len(payload)} mensajes)")
+    """Genera y envía el reporte diario a las 20:00hs al número configurado."""
+    try:
+        reporte = await generar_reporte_diario_preview()
+        resultado = await proveedor.enviar_mensaje(REPORTE_DIARIO_TELEFONO, reporte)
+        if resultado:
+            logger.info(f"Reporte diario enviado a {REPORTE_DIARIO_TELEFONO}")
+        else:
+            logger.error(f"Error al enviar reporte diario a {REPORTE_DIARIO_TELEFONO}")
+    except Exception as e:
+        logger.error(f"Error generando reporte diario: {e}")
 
 
 # ── Debounce: acumular mensajes por teléfono antes de procesar ──
@@ -224,9 +181,9 @@ async def iniciar_servicios():
     await inicializar_db()
     logger.info("Base de datos inicializada")
     scheduler = AsyncIOScheduler(timezone="America/Argentina/Buenos_Aires")
-    # scheduler.add_job(enviar_resumen_diario, CronTrigger(hour=20, minute=0, timezone="America/Argentina/Buenos_Aires"))
+    scheduler.add_job(enviar_resumen_diario, CronTrigger(hour=20, minute=0, timezone="America/Argentina/Buenos_Aires"))
     scheduler.start()
-    logger.info("Scheduler iniciado — resumen diario desactivado")
+    logger.info("Scheduler iniciado — reporte diario a las 20:00hs")
 
 
 async def procesar_mensaje_cliente(telefono: str, texto: str):
