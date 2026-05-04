@@ -228,6 +228,12 @@ async def procesar_mensaje_cliente(telefono: str, texto: str):
             })
             await notificar_grupo_solicitud(telefono, resumen_texto, proveedor, solicitud_id)
         respuesta = re.sub(r'\[SOLICITUD_COMPLETA:.+?\]', '', respuesta, flags=re.DOTALL).strip()
+        if not respuesta:
+            respuesta = "Perfecto, ya registramos el reclamo y lo derivamos al equipo técnico. Muchas gracias."
+
+    if not respuesta or not respuesta.strip():
+        logger.error(f"Respuesta vacía generada para {telefono}. No se envía mensaje.")
+        return
 
     await guardar_mensaje(telefono, "user", texto)
     await guardar_mensaje(telefono, "assistant", respuesta)
