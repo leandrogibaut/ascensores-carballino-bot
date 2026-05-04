@@ -80,14 +80,20 @@ def formatear_resumen_solicitud(datos_raw: str) -> tuple[str, dict]:
         quien_abre = extraido.get("quien_abre", "")
         piso_depto = extraido.get("piso_depto", "")
 
-        partes = [p for p in [direccion, tipo] if p]
+        partes_resumen = []
+        if direccion and tipo:
+            partes_resumen.append(f"{direccion}, {tipo}.")
+        elif direccion:
+            partes_resumen.append(f"{direccion}.")
+        elif tipo:
+            partes_resumen.append(f"{tipo}.")
         if quien_abre:
             abre = f"Abre {quien_abre}"
             if piso_depto and piso_depto.upper() != "N/A":
                 abre += f" ({piso_depto})"
-            partes.append(abre)
+            partes_resumen.append(abre + ".")
 
-        resumen = " - ".join(partes) if partes else datos_raw
+        resumen = " ".join(partes_resumen) if partes_resumen else datos_raw
         return resumen, extraido
 
     # Formato nuevo: texto libre — limpiar y extraer partes por punto

@@ -102,9 +102,7 @@ async def notificar_grupo_solicitud(telefono_cliente: str, resumen: str, proveed
         f"{resumen}\n"
         f"─────────────────────────\n"
         f"📱 WhatsApp cliente: {telefono_cliente}\n"
-        f"🕐 {datetime.now().strftime('%d/%m/%Y %H:%M')}hs\n"
-        f"─────────────────────────\n"
-        f"✏️ Responder: *LISTO #{solicitud_id}* o *PENDIENTE #{solicitud_id} [motivo]*"
+        f"🕐 {datetime.now().strftime('%d/%m/%Y %H:%M')}hs"
     )
 
     if proveedor:
