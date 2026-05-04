@@ -427,7 +427,14 @@ async def webhook_handler(request: Request):
             telefono_norm = msg.telefono.replace("-group", "").replace("@g.us", "")
             grupo_norm = GRUPO_INTERNO.replace("-group", "").replace("@g.us", "")
             if telefono_norm == grupo_norm and grupo_norm:
-                await guardar_mensaje_grupo(msg.telefono, msg.nombre_remitente, msg.texto)
+                await guardar_mensaje_grupo(
+                    msg.telefono,
+                    msg.nombre_remitente,
+                    msg.texto,
+                    mensaje_id=msg.mensaje_id or msg.message_id,
+                    reference_message_id=msg.reference_message_id,
+                    texto_citado=msg.texto_citado,
+                )
 
                 solicitud = None
 

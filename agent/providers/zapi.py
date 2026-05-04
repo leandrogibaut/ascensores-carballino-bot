@@ -107,6 +107,9 @@ class ProveedorZapi(ProveedorWhatsApp):
         if not texto and not es_propio:
             return []
 
+        quoted = body.get("quotedMessage", {}) or {}
+        texto_citado = quoted.get("text", {}).get("message") or quoted.get("caption")
+
         mensajes.append(MensajeEntrante(
             telefono=telefono,
             texto=texto,
@@ -115,6 +118,7 @@ class ProveedorZapi(ProveedorWhatsApp):
             reference_message_id=body.get("referenceMessageId"),  # 2A: ID del mensaje citado (reply)
             message_id=body.get("messageId"),                     # 2A: ID propio del mensaje
             nombre_remitente=body.get("senderName", ""),
+            texto_citado=texto_citado or None,
         ))
         return mensajes
 

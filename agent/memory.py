@@ -77,6 +77,9 @@ class MensajeGrupo(Base):
     telefono_remitente: Mapped[str] = mapped_column(String(50))
     nombre_remitente: Mapped[str] = mapped_column(String(100), default="")
     texto: Mapped[str] = mapped_column(Text)
+    mensaje_id: Mapped[str | None] = mapped_column(String(100), nullable=True, default=None)
+    reference_message_id: Mapped[str | None] = mapped_column(String(100), nullable=True, default=None)
+    texto_citado: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)
     fecha: Mapped[date] = mapped_column(Date, default=date.today)
     timestamp: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
@@ -92,6 +95,17 @@ async def inicializar_db():
             await conn.execute(text("ALTER TABLE solicitudes ADD COLUMN mensaje_grupo_id VARCHAR(100) DEFAULT ''"))
     except Exception:
         pass  # la columna ya existe
+    # Paso 3: migración defensiva — columnas nuevas en mensajes_grupo
+    for ddl in [
+        "ALTER TABLE mensajes_grupo ADD COLUMN mensaje_id VARCHAR(100)",
+        "ALTER TABLE mensajes_grupo ADD COLUMN reference_message_id VARCHAR(100)",
+        "ALTER TABLE mensajes_grupo ADD COLUMN texto_citado TEXT",
+    ]:
+        try:
+            async with engine.begin() as conn:
+                await conn.execute(text(ddl))
+        except Exception:
+            pass  # la columna ya existe
 
 
 async def guardar_mensaje(telefono: str, role: str, content: str):
@@ -316,13 +330,23 @@ async def hay_intervencion_reciente(telefono: str, horas: int = 6) -> bool:
         return result.scalar_one_or_none() is not None
 
 
-async def guardar_mensaje_grupo(telefono: str, nombre: str, texto: str):
+async def guardar_mensaje_grupo(
+    telefono: str,
+    nombre: str,
+    texto: str,
+    mensaje_id: str | None = None,
+    reference_message_id: str | None = None,
+    texto_citado: str | None = None,
+):
     """Guarda un mensaje recibido en el grupo interno."""
     async with async_session() as session:
         msg = MensajeGrupo(
             telefono_remitente=telefono,
             nombre_remitente=nombre,
             texto=texto,
+            mensaje_id=mensaje_id,
+            reference_message_id=reference_message_id,
+            texto_citado=texto_citado,
             fecha=date.today(),
             timestamp=datetime.utcnow(),
         )
