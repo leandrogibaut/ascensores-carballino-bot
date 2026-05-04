@@ -47,6 +47,7 @@ proveedor = obtener_proveedor()
 PORT = int(os.getenv("PORT", 8000))
 GRUPO_INTERNO = os.getenv("WHAPI_GROUP_ID", "")
 ADMIN_PHONE = "5491131815195"  # Número del administrador
+TELEFONOS_EXCLUIDOS = {"5491122636490"}  # No reciben respuestas automáticas
 
 # Estado del bot (activo por defecto)
 bot_activo = True
@@ -398,9 +399,14 @@ async def webhook_handler(request: Request):
             if not msg.texto:
                 continue
 
+            # ── Números excluidos de respuestas automáticas ──
+            telefono_limpio = msg.telefono.replace("@s.whatsapp.net", "").replace("+", "")
+            if telefono_limpio in TELEFONOS_EXCLUIDOS:
+                logger.info(f"Teléfono {msg.telefono} está excluido de respuesta automática, no responder")
+                continue
+
             # ── Comandos del administrador ──
             global bot_activo
-            telefono_limpio = msg.telefono.replace("@s.whatsapp.net", "").replace("+", "")
             if telefono_limpio == ADMIN_PHONE or msg.telefono == ADMIN_PHONE:
                 comando = msg.texto.strip().upper()
                 if comando == "PAUSA BOT":
