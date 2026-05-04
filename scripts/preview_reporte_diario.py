@@ -15,7 +15,7 @@ from datetime import date
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from agent.memory import inicializar_db
-from agent.main import generar_reporte_diario_preview
+from agent.reports import generar_reporte_diario_preview
 
 
 async def main():
