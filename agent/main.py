@@ -11,7 +11,7 @@ import re
 import asyncio
 import logging
 from contextlib import asynccontextmanager
-from datetime import datetime
+from datetime import datetime, date
 from zoneinfo import ZoneInfo
 from fastapi import FastAPI, Request, HTTPException
 from fastapi.responses import PlainTextResponse
@@ -30,6 +30,7 @@ from agent.memory import (
     marcar_intervencion_humana,
     hay_intervencion_reciente,
     guardar_mensaje_grupo, obtener_mensajes_grupo_del_dia,
+    obtener_solicitudes_por_fecha, obtener_mensajes_grupo_por_fecha,
 )
 from agent.providers import obtener_proveedor
 from agent.tools import notificar_grupo_solicitud
@@ -131,6 +132,48 @@ def analizar_mensaje_tecnico(texto: str) -> tuple[str, str]:
         return "pendiente_con_nota", texto
     # Sin palabras claras: lo tratamos como nota informativa sobre la solicitud
     return "pendiente_con_nota", texto
+
+
+async def generar_reporte_diario_preview(fecha: date | None = None) -> str:
+    """Genera el texto del reporte diario sin enviar nada."""
+    tz = ZoneInfo("America/Argentina/Buenos_Aires")
+    hoy = fecha or datetime.now(tz).date()
+    fecha_str = hoy.strftime("%d/%m/%Y")
+
+    solicitudes = await obtener_solicitudes_por_fecha(hoy)
+
+    resueltos  = [s for s in solicitudes if s.estado == "resuelto"]
+    en_curso   = [s for s in solicitudes if s.estado == "pendiente_con_nota"]
+    pendientes = [s for s in solicitudes if s.estado == "pendiente"]
+
+    lineas = [f"Reporte diario - {fecha_str}", ""]
+
+    lineas.append("Reclamos solucionados:")
+    if resueltos:
+        for s in resueltos:
+            nota = f"Técnico indicó: {s.notas_tecnico}" if s.notas_tecnico else "Solucionado."
+            lineas.append(f"- {s.direccion}, {s.tipo}. {nota}")
+    else:
+        lineas.append("- Ninguno.")
+
+    lineas.append("")
+    lineas.append("Reclamos en curso:")
+    if en_curso:
+        for s in en_curso:
+            nota = f"Técnico indicó: {s.notas_tecnico}" if s.notas_tecnico else "Sin nota."
+            lineas.append(f"- {s.direccion}, {s.tipo}. {nota}")
+    else:
+        lineas.append("- Ninguno.")
+
+    lineas.append("")
+    lineas.append("Reclamos pendientes:")
+    if pendientes:
+        for s in pendientes:
+            lineas.append(f"- {s.direccion}, {s.tipo}. Sin respuesta técnica registrada.")
+    else:
+        lineas.append("- Ninguno.")
+
+    return "\n".join(lineas)
 
 
 async def enviar_resumen_diario():

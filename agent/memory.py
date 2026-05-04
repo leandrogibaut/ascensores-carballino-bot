@@ -364,3 +364,27 @@ async def obtener_mensajes_grupo_del_dia() -> list[MensajeGrupo]:
         )
         result = await session.execute(query)
         return result.scalars().all()
+
+
+async def obtener_solicitudes_por_fecha(fecha: date) -> list[Solicitud]:
+    """Retorna todas las solicitudes de una fecha dada."""
+    async with async_session() as session:
+        query = (
+            select(Solicitud)
+            .where(Solicitud.fecha == fecha)
+            .order_by(Solicitud.timestamp.asc())
+        )
+        result = await session.execute(query)
+        return result.scalars().all()
+
+
+async def obtener_mensajes_grupo_por_fecha(fecha: date) -> list[MensajeGrupo]:
+    """Retorna todos los mensajes del grupo de una fecha dada."""
+    async with async_session() as session:
+        query = (
+            select(MensajeGrupo)
+            .where(MensajeGrupo.fecha == fecha)
+            .order_by(MensajeGrupo.timestamp.asc())
+        )
+        result = await session.execute(query)
+        return result.scalars().all()
