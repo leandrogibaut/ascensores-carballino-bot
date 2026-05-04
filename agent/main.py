@@ -33,6 +33,7 @@ from agent.memory import (
     obtener_solicitudes_por_fecha, obtener_mensajes_grupo_por_fecha,
 )
 from agent.reports import generar_reporte_diario_preview  # noqa: F401
+from agent.conocimiento import buscar_cliente_por_texto
 from agent.providers import obtener_proveedor
 from agent.tools import notificar_grupo_solicitud
 
@@ -98,18 +99,32 @@ def formatear_resumen_solicitud(datos_raw: str) -> tuple[str, dict]:
             partes_resumen.append(abre + ".")
 
         resumen = " ".join(partes_resumen) if partes_resumen else datos_raw
-        return resumen, extraido
 
-    # Formato nuevo: texto libre — limpiar y extraer partes por punto
-    resumen = " ".join(datos_raw.split())  # colapsa saltos de línea y espacios múltiples
-    partes = [p.strip() for p in resumen.split(".") if p.strip()]
-    extraido = {}
-    if len(partes) >= 1:
-        extraido["direccion"] = partes[0]
-    if len(partes) >= 2:
-        extraido["tipo"] = partes[1]
-    if len(partes) >= 3:
-        extraido["quien_abre"] = ". ".join(partes[2:])
+    else:
+        # Formato nuevo: texto libre — limpiar y extraer partes por punto
+        resumen = " ".join(datos_raw.split())
+        partes = [p.strip() for p in resumen.split(".") if p.strip()]
+        extraido = {}
+        if len(partes) >= 1:
+            extraido["direccion"] = partes[0]
+        if len(partes) >= 2:
+            extraido["tipo"] = partes[1]
+        if len(partes) >= 3:
+            extraido["quien_abre"] = ". ".join(partes[2:])
+
+    # Normalización silenciosa: si la dirección coincide con un cliente conocido,
+    # reemplazar dirección y consorcio con los valores canónicos del YAML.
+    cliente = buscar_cliente_por_texto(datos_raw)
+    if cliente:
+        old_dir = extraido.get("direccion", "")
+        extraido["direccion"] = cliente["direccion"]
+        extraido["consorcio"] = cliente["nombre"]
+        new_dir = cliente["direccion"]
+        if old_dir and old_dir in resumen:
+            resumen = resumen.replace(old_dir, new_dir, 1)
+        elif not old_dir:
+            resumen = new_dir + (". " + resumen if resumen else "")
+
     return resumen, extraido
 
 
