@@ -1,0 +1,860 @@
+# config/clientes_direcciones.yaml
+# Base de clientes/direcciones para normalización silenciosa de reclamos.
+# NO se incluye en el prompt de Olivia.
+# Regla de aliases: solo la dirección completa, salvo casos especiales explícitos.
+
+clientes:
+
+  - nombre: "Cuenca 2379"
+    direccion: "Cuenca 2379"
+    aliases:
+      - "Cuenca 2379"
+
+  - nombre: "Reservistas 533"
+    direccion: "Reservistas 533"
+    aliases:
+      - "Reservistas 533"
+
+  - nombre: "Homero 607"
+    direccion: "Homero 607"
+    aliases:
+      - "Homero 607"
+
+  - nombre: "Armenia 2251"
+    direccion: "Armenia 2251"
+    aliases:
+      - "Armenia 2251"
+
+  - nombre: "Murguiondo 1541"
+    direccion: "Murguiondo 1541"
+    aliases:
+      - "Murguiondo 1541"
+
+  - nombre: "Hotel Avenida 623"
+    direccion: "Hotel Avenida 623"
+    aliases:
+      - "Hotel Avenida 623"
+      - "Hotel Avenida"
+
+  - nombre: "Guayaquil 726"
+    direccion: "Guayaquil 726"
+    aliases:
+      - "Guayaquil 726"
+
+  - nombre: "Valle 700"
+    direccion: "Valle 700"
+    aliases:
+      - "Valle 700"
+
+  - nombre: "Vicente López 1921"
+    direccion: "Vicente López 1921"
+    aliases:
+      - "Vicente López 1921"
+
+  - nombre: "Peña 2485"
+    direccion: "Peña 2485"
+    aliases:
+      - "Peña 2485"
+
+  - nombre: "S. Ortiz 3078"
+    direccion: "S. Ortiz 3078"
+    aliases:
+      - "S. Ortiz 3078"
+
+  - nombre: "Av. Córdoba 3001"
+    direccion: "Av. Córdoba 3001"
+    aliases:
+      - "Av. Córdoba 3001"
+
+  - nombre: "Dolores 31"
+    direccion: "Dolores 31"
+    aliases:
+      - "Dolores 31"
+
+  - nombre: "Av. Gaona 1422"
+    direccion: "Av. Gaona 1422"
+    aliases:
+      - "Av. Gaona 1422"
+
+  - nombre: "Cucha Cucha 1077"
+    direccion: "Cucha Cucha 1077"
+    aliases:
+      - "Cucha Cucha 1077"
+
+  - nombre: "Balbín 2642"
+    direccion: "Balbín 2642"
+    aliases:
+      - "Balbín 2642"
+
+  - nombre: "Congreso 2311"
+    direccion: "Congreso 2311"
+    aliases:
+      - "Congreso 2311"
+
+  - nombre: "Alberdi 472"
+    direccion: "Alberdi 472"
+    aliases:
+      - "Alberdi 472"
+
+  - nombre: "B. Irigoyen 764"
+    direccion: "B. Irigoyen 764"
+    aliases:
+      - "B. Irigoyen 764"
+
+  - nombre: "Godoy Cruz 3226"
+    direccion: "Godoy Cruz 3226"
+    aliases:
+      - "Godoy Cruz 3226"
+
+  - nombre: "Viamonte 1594"
+    direccion: "Viamonte 1594"
+    aliases:
+      - "Viamonte 1594"
+
+  - nombre: "Av. Campos 437"
+    direccion: "Av. Campos 437"
+    aliases:
+      - "Av. Campos 437"
+
+  - nombre: "Hidalgo 78"
+    direccion: "Hidalgo 78"
+    aliases:
+      - "Hidalgo 78"
+
+  - nombre: "Talcahuano 950"
+    direccion: "Talcahuano 950"
+    aliases:
+      - "Talcahuano 950"
+
+  - nombre: "Guido 1974"
+    direccion: "Guido 1974"
+    aliases:
+      - "Guido 1974"
+
+  - nombre: "Billinghurst 238"
+    direccion: "Billinghurst 238"
+    aliases:
+      - "Billinghurst 238"
+
+  - nombre: "Avellaneda 2105"
+    direccion: "Avellaneda 2105"
+    aliases:
+      - "Avellaneda 2105"
+
+  - nombre: "Paraná 425"
+    direccion: "Paraná 425"
+    aliases:
+      - "Paraná 425"
+
+  - nombre: "Franklin Roosevelt 1942"
+    direccion: "Franklin Roosevelt 1942"
+    aliases:
+      - "Franklin Roosevelt 1942"
+
+  - nombre: "Tronador 1490"
+    direccion: "Tronador 1490"
+    aliases:
+      - "Tronador 1490"
+
+  - nombre: "Ugarteche 3083"
+    direccion: "Ugarteche 3083"
+    aliases:
+      - "Ugarteche 3083"
+
+  - nombre: "Godoy Cruz 3243"
+    direccion: "Godoy Cruz 3243"
+    aliases:
+      - "Godoy Cruz 3243"
+
+  - nombre: "Salguero 845"
+    direccion: "Salguero 845"
+    aliases:
+      - "Salguero 845"
+
+  - nombre: "Cabrera 6047"
+    direccion: "Cabrera 6047"
+    aliases:
+      - "Cabrera 6047"
+
+  - nombre: "Hilanderia Aldeana S.A."
+    direccion: "Hilanderia Aldeana S.A."
+    aliases:
+      - "Hilanderia Aldeana S.A."
+      - "Hilanderia Aldeana"
+
+  - nombre: "Agüero 1131"
+    direccion: "Agüero 1131"
+    aliases:
+      - "Agüero 1131"
+
+  - nombre: "Libertad 257"
+    direccion: "Libertad 257"
+    aliases:
+      - "Libertad 257"
+
+  - nombre: "Serrano 895"
+    direccion: "Serrano 895"
+    aliases:
+      - "Serrano 895"
+
+  - nombre: "Bucarelli 3343"
+    direccion: "Bucarelli 3343"
+    aliases:
+      - "Bucarelli 3343"
+
+  - nombre: "Camargo 440"
+    direccion: "Camargo 440"
+    aliases:
+      - "Camargo 440"
+
+  - nombre: "15 de Noviembre 1408"
+    direccion: "15 de Noviembre 1408"
+    aliases:
+      - "15 de Noviembre 1408"
+
+  - nombre: "Hipólito Yrigoyen 2287"
+    direccion: "Hipólito Yrigoyen 2287"
+    aliases:
+      - "Hipólito Yrigoyen 2287"
+
+  - nombre: "Av. Dr. Honorio 1237"
+    direccion: "Av. Dr. Honorio 1237"
+    aliases:
+      - "Av. Dr. Honorio 1237"
+
+  - nombre: "Ugarteche 2995"
+    direccion: "Ugarteche 2995"
+    aliases:
+      - "Ugarteche 2995"
+
+  - nombre: "Araoz 576"
+    direccion: "Araoz 576"
+    aliases:
+      - "Araoz 576"
+
+  - nombre: "Uriburu 1033"
+    direccion: "Uriburu 1033"
+    aliases:
+      - "Uriburu 1033"
+
+  - nombre: "Paraguay 435"
+    direccion: "Paraguay 435"
+    aliases:
+      - "Paraguay 435"
+
+  - nombre: "Rivadavia 2209"
+    direccion: "Rivadavia 2209"
+    aliases:
+      - "Rivadavia 2209"
+
+  - nombre: "Rodríguez Peña 181"
+    direccion: "Rodríguez Peña 181"
+    aliases:
+      - "Rodríguez Peña 181"
+
+  - nombre: "Anasagasti 2018"
+    direccion: "Anasagasti 2018"
+    aliases:
+      - "Anasagasti 2018"
+
+  - nombre: "Av. Cramer 1964"
+    direccion: "Av. Cramer 1964"
+    aliases:
+      - "Av. Cramer 1964"
+
+  - nombre: "Sarmiento 2725"
+    direccion: "Sarmiento 2725"
+    aliases:
+      - "Sarmiento 2725"
+
+  - nombre: "Virrey del Pino 2775"
+    direccion: "Virrey del Pino 2775"
+    aliases:
+      - "Virrey del Pino 2775"
+
+  - nombre: "Maza 1228"
+    direccion: "Maza 1228"
+    aliases:
+      - "Maza 1228"
+
+  - nombre: "Corrientes 914"
+    direccion: "Corrientes 914"
+    aliases:
+      - "Corrientes 914"
+
+  - nombre: "Saavedra 124"
+    direccion: "Saavedra 124"
+    aliases:
+      - "Saavedra 124"
+
+  - nombre: "Montevideo 1178"
+    direccion: "Montevideo 1178"
+    aliases:
+      - "Montevideo 1178"
+
+  - nombre: "Curapaligue 1250"
+    direccion: "Curapaligue 1250"
+    aliases:
+      - "Curapaligue 1250"
+
+  - nombre: "Velasco 1153"
+    direccion: "Velasco 1153"
+    aliases:
+      - "Velasco 1153"
+
+  - nombre: "Maza 438"
+    direccion: "Maza 438"
+    aliases:
+      - "Maza 438"
+
+  - nombre: "Av. Belgrano 1871"
+    direccion: "Av. Belgrano 1871"
+    aliases:
+      - "Av. Belgrano 1871"
+
+  - nombre: "Pichincha 50"
+    direccion: "Pichincha 50"
+    aliases:
+      - "Pichincha 50"
+
+  - nombre: "Tucumán 686"
+    direccion: "Tucumán 686"
+    aliases:
+      - "Tucumán 686"
+      - "Hotel Tucuman"
+
+  - nombre: "Carlos Pellegrini 1219"
+    direccion: "Carlos Pellegrini 1219"
+    aliases:
+      - "Carlos Pellegrini 1219"
+
+  - nombre: "Carlos Pellegrini 1253"
+    direccion: "Carlos Pellegrini 1253"
+    aliases:
+      - "Carlos Pellegrini 1253"
+
+  - nombre: "Talcahuano 945"
+    direccion: "Talcahuano 945"
+    aliases:
+      - "Talcahuano 945"
+
+  - nombre: "Conde 2006"
+    direccion: "Conde 2006"
+    aliases:
+      - "Conde 2006"
+
+  - nombre: "Larrea 740"
+    direccion: "Larrea 740"
+    aliases:
+      - "Larrea 740"
+
+  - nombre: "Acevedo 381"
+    direccion: "Acevedo 381"
+    aliases:
+      - "Acevedo 381"
+
+  - nombre: "Tacuarí 974"
+    direccion: "Tacuarí 974"
+    aliases:
+      - "Tacuarí 974"
+
+  - nombre: "Ugarteche 3050"
+    direccion: "Ugarteche 3050"
+    aliases:
+      - "Ugarteche 3050"
+
+  - nombre: "Junín 1083"
+    direccion: "Junín 1083"
+    aliases:
+      - "Junín 1083"
+
+  - nombre: "Charcas 3226"
+    direccion: "Charcas 3226"
+    aliases:
+      - "Charcas 3226"
+
+  - nombre: "Peña 2464"
+    direccion: "Peña 2464"
+    aliases:
+      - "Peña 2464"
+
+  - nombre: "Apolinario Figueroa 1390"
+    direccion: "Apolinario Figueroa 1390"
+    aliases:
+      - "Apolinario Figueroa 1390"
+
+  - nombre: "Av. De Mayo 935"
+    direccion: "Av. De Mayo 935"
+    aliases:
+      - "Av. De Mayo 935"
+      - "Banigo"
+
+  - nombre: "Río de Janeiro 43"
+    direccion: "Río de Janeiro 43"
+    aliases:
+      - "Río de Janeiro 43"
+
+  - nombre: "Av. Cramer 2966"
+    direccion: "Av. Cramer 2966"
+    aliases:
+      - "Av. Cramer 2966"
+      - "Hostal Cramer"
+      - "Cramer 2966"
+
+  - nombre: "Carlos Calvo 1885"
+    direccion: "Carlos Calvo 1885"
+    aliases:
+      - "Carlos Calvo 1885"
+
+  - nombre: "Hortiguera 1529"
+    direccion: "Hortiguera 1529"
+    aliases:
+      - "Hortiguera 1529"
+
+  - nombre: "Achaval 845"
+    direccion: "Achaval 845"
+    aliases:
+      - "Achaval 845"
+
+  - nombre: "Las Heras 3001"
+    direccion: "Las Heras 3001"
+    aliases:
+      - "Las Heras 3001"
+
+  - nombre: "Lavalle 1491"
+    direccion: "Lavalle 1491"
+    aliases:
+      - "Lavalle 1491"
+
+  - nombre: "Paraná 525"
+    direccion: "Paraná 525"
+    aliases:
+      - "Paraná 525"
+
+  - nombre: "Emilio Mitre 914"
+    direccion: "Emilio Mitre 914"
+    aliases:
+      - "Emilio Mitre 914"
+
+  - nombre: "Yerbal 905"
+    direccion: "Yerbal 905"
+    aliases:
+      - "Yerbal 905"
+
+  - nombre: "Thames 2143"
+    direccion: "Thames 2143"
+    aliases:
+      - "Thames 2143"
+
+  - nombre: "Sarmiento 1272"
+    direccion: "Sarmiento 1272"
+    aliases:
+      - "Sarmiento 1272"
+
+  - nombre: "Pedro Goyena 585"
+    direccion: "Pedro Goyena 585"
+    aliases:
+      - "Pedro Goyena 585"
+
+  - nombre: "Vidal 3639"
+    direccion: "Vidal 3639"
+    aliases:
+      - "Vidal 3639"
+
+  - nombre: "French 3130"
+    direccion: "French 3130"
+    aliases:
+      - "French 3130"
+
+  - nombre: "República Árabe Siria 2723"
+    direccion: "República Árabe Siria 2723"
+    aliases:
+      - "República Árabe Siria 2723"
+
+  - nombre: "Av. Belgrano 2694"
+    direccion: "Av. Belgrano 2694"
+    aliases:
+      - "Av. Belgrano 2694"
+
+  - nombre: "Tucumán 2494"
+    direccion: "Tucumán 2494"
+    aliases:
+      - "Tucumán 2494"
+
+  - nombre: "Esmeralda 1274"
+    direccion: "Esmeralda 1274"
+    aliases:
+      - "Esmeralda 1274"
+
+  - nombre: "Av. Libertador 1168"
+    direccion: "Av. Libertador 1168"
+    aliases:
+      - "Av. Libertador 1168"
+
+  - nombre: "Emilio Mitre 45"
+    direccion: "Emilio Mitre 45"
+    aliases:
+      - "Emilio Mitre 45"
+
+  - nombre: "Vidal 3621"
+    direccion: "Vidal 3621"
+    aliases:
+      - "Vidal 3621"
+
+  - nombre: "Av. Santa Fe 4276"
+    direccion: "Av. Santa Fe 4276"
+    aliases:
+      - "Av. Santa Fe 4276"
+
+  - nombre: "Migueletes 1227"
+    direccion: "Migueletes 1227"
+    aliases:
+      - "Migueletes 1227"
+
+  - nombre: "Figueroa Alcorta 3090"
+    direccion: "Figueroa Alcorta 3090"
+    aliases:
+      - "Figueroa Alcorta 3090"
+
+  - nombre: "Defensa 1647"
+    direccion: "Defensa 1647"
+    aliases:
+      - "Defensa 1647"
+
+  - nombre: "Av. Santa Fe 2302"
+    direccion: "Av. Santa Fe 2302"
+    aliases:
+      - "Av. Santa Fe 2302"
+
+  - nombre: "Guatemala 5777"
+    direccion: "Guatemala 5777"
+    aliases:
+      - "Guatemala 5777"
+
+  - nombre: "Av. Córdoba 3276"
+    direccion: "Av. Córdoba 3276"
+    aliases:
+      - "Av. Córdoba 3276"
+
+  - nombre: "Acevedo 373"
+    direccion: "Acevedo 373"
+    aliases:
+      - "Acevedo 373"
+
+  - nombre: "Alsina 2490"
+    direccion: "Alsina 2490"
+    aliases:
+      - "Alsina 2490"
+
+  - nombre: "Tres Arroyos 802"
+    direccion: "Tres Arroyos 802"
+    aliases:
+      - "Tres Arroyos 802"
+
+  - nombre: "Riglos 505"
+    direccion: "Riglos 505"
+    aliases:
+      - "Riglos 505"
+
+  - nombre: "Espinosa 28"
+    direccion: "Espinosa 28"
+    aliases:
+      - "Espinosa 28"
+
+  - nombre: "Anasagasti 2066"
+    direccion: "Anasagasti 2066"
+    aliases:
+      - "Anasagasti 2066"
+
+  - nombre: "Cachimayo 130"
+    direccion: "Cachimayo 130"
+    aliases:
+      - "Cachimayo 130"
+
+  - nombre: "Azcuénaga 532"
+    direccion: "Azcuénaga 532"
+    aliases:
+      - "Azcuénaga 532"
+
+  - nombre: "Viamonte 2533"
+    direccion: "Viamonte 2533"
+    aliases:
+      - "Viamonte 2533"
+
+  - nombre: "Pedernera 411"
+    direccion: "Pedernera 411"
+    aliases:
+      - "Pedernera 411"
+
+  - nombre: "Montañeses 3050"
+    direccion: "Montañeses 3050"
+    aliases:
+      - "Montañeses 3050"
+
+  - nombre: "Laprida 1718"
+    direccion: "Laprida 1718"
+    aliases:
+      - "Laprida 1718"
+
+  - nombre: "Olavarría 529"
+    direccion: "Olavarría 529"
+    aliases:
+      - "Olavarría 529"
+
+  - nombre: "Posadas 1477"
+    direccion: "Posadas 1477"
+    aliases:
+      - "Posadas 1477"
+
+  - nombre: "José Bonifacio 1138"
+    direccion: "José Bonifacio 1138"
+    aliases:
+      - "José Bonifacio 1138"
+
+  - nombre: "Riglos 461"
+    direccion: "Riglos 461"
+    aliases:
+      - "Riglos 461"
+
+  - nombre: "García Lorca 20"
+    direccion: "García Lorca 20"
+    aliases:
+      - "García Lorca 20"
+
+  - nombre: "Viamonte 2357"
+    direccion: "Viamonte 2357"
+    aliases:
+      - "Viamonte 2357"
+
+  - nombre: "Rosario 424"
+    direccion: "Rosario 424"
+    aliases:
+      - "Rosario 424"
+
+  - nombre: "Tres de Febrero 1831"
+    direccion: "Tres de Febrero 1831"
+    aliases:
+      - "Tres de Febrero 1831"
+
+  - nombre: "Combate de los Pozos"
+    direccion: "Combate de los Pozos"
+    aliases:
+      - "Combate de los Pozos"
+
+  - nombre: "Acuña de Figueroa 139"
+    direccion: "Acuña de Figueroa 139"
+    aliases:
+      - "Acuña de Figueroa 139"
+
+  - nombre: "Valentín Gómez 3191"
+    direccion: "Valentín Gómez 3191"
+    aliases:
+      - "Valentín Gómez 3191"
+
+  - nombre: "Arzobispado"
+    direccion: "Arzobispado"
+    aliases:
+      - "Arzobispado"
+      - "Arzovispado"
+
+  - nombre: "Ramón Falcón 1654"
+    direccion: "Ramón Falcón 1654"
+    aliases:
+      - "Ramón Falcón 1654"
+
+  - nombre: "Beruti 2940"
+    direccion: "Beruti 2940"
+    aliases:
+      - "Beruti 2940"
+
+  - nombre: "Warnes 281"
+    direccion: "Warnes 281"
+    aliases:
+      - "Warnes 281"
+
+  - nombre: "Juncal 2541"
+    direccion: "Juncal 2541"
+    aliases:
+      - "Juncal 2541"
+
+  - nombre: "Montevideo 765"
+    direccion: "Montevideo 765"
+    aliases:
+      - "Montevideo 765"
+
+  - nombre: "Oro 2976"
+    direccion: "Oro 2976"
+    aliases:
+      - "Oro 2976"
+
+  - nombre: "Rosario 388"
+    direccion: "Rosario 388"
+    aliases:
+      - "Rosario 388"
+
+  - nombre: "Pola 45"
+    direccion: "Pola 45"
+    aliases:
+      - "Pola 45"
+
+  - nombre: "Ayacucho 232"
+    direccion: "Ayacucho 232"
+    aliases:
+      - "Ayacucho 232"
+
+  - nombre: "Scalabrini Ortiz 467"
+    direccion: "Scalabrini Ortiz 467"
+    aliases:
+      - "Scalabrini Ortiz 467"
+
+  - nombre: "Godoy Cruz 3108"
+    direccion: "Godoy Cruz 3108"
+    aliases:
+      - "Godoy Cruz 3108"
+
+  - nombre: "Directorio 612"
+    direccion: "Directorio 612"
+    aliases:
+      - "Directorio 612"
+
+  - nombre: "Catamarca 339"
+    direccion: "Catamarca 339"
+    aliases:
+      - "Catamarca 339"
+
+  - nombre: "Mosconi 3353"
+    direccion: "Mosconi 3353"
+    aliases:
+      - "Mosconi 3353"
+
+  - nombre: "Hortiguera 238"
+    direccion: "Hortiguera 238"
+    aliases:
+      - "Hortiguera 238"
+
+  - nombre: "Algodonera Dumont 3454"
+    direccion: "Algodonera Dumont 3454"
+    aliases:
+      - "Algodonera Dumont 3454"
+      - "Algodonera"
+      - "Dumont"
+
+  - nombre: "Guido 1852"
+    direccion: "Guido 1852"
+    aliases:
+      - "Guido 1852"
+
+  - nombre: "Rosario 170"
+    direccion: "Rosario 170"
+    aliases:
+      - "Rosario 170"
+
+  - nombre: "Rivera 2815"
+    direccion: "Rivera 2815"
+    aliases:
+      - "Rivera 2815"
+
+  - nombre: "Laprida 1714"
+    direccion: "Laprida 1714"
+    aliases:
+      - "Laprida 1714"
+
+  - nombre: "Armenia 2250"
+    direccion: "Armenia 2250"
+    aliases:
+      - "Armenia 2250"
+
+  - nombre: "Thames 2331"
+    direccion: "Thames 2331"
+    aliases:
+      - "Thames 2331"
+
+  - nombre: "Acoyte 746"
+    direccion: "Acoyte 746"
+    aliases:
+      - "Acoyte 746"
+
+  - nombre: "Foullier 5846"
+    direccion: "Foullier 5846"
+    aliases:
+      - "Foullier 5846"
+
+  - nombre: "Guayaquil 241"
+    direccion: "Guayaquil 241"
+    aliases:
+      - "Guayaquil 241"
+
+  - nombre: "Castro 1137"
+    direccion: "Castro 1137"
+    aliases:
+      - "Castro 1137"
+
+  - nombre: "Julián Álvarez 2255"
+    direccion: "Julián Álvarez 2255"
+    aliases:
+      - "Julián Álvarez 2255"
+
+  - nombre: "Boulogne Sur Mer 478"
+    direccion: "Boulogne Sur Mer 478"
+    aliases:
+      - "Boulogne Sur Mer 478"
+
+  - nombre: "Gana 192"
+    direccion: "Gana 192"
+    aliases:
+      - "Gana 192"
+
+  - nombre: "Av. Pueyrredón 2410"
+    direccion: "Av. Pueyrredón 2410"
+    aliases:
+      - "Av. Pueyrredón 2410"
+
+  - nombre: "Carabobo 54"
+    direccion: "Carabobo 54"
+    aliases:
+      - "Carabobo 54"
+
+  - nombre: "Arribeños 3113"
+    direccion: "Arribeños 3113"
+    aliases:
+      - "Arribeños 3113"
+
+  - nombre: "Carabobo 170"
+    direccion: "Carabobo 170"
+    aliases:
+      - "Carabobo 170"
+
+  - nombre: "Arce 596"
+    direccion: "Arce 596"
+    aliases:
+      - "Arce 596"
+
+  - nombre: "Herrera 572"
+    direccion: "Herrera 572"
+    aliases:
+      - "Herrera 572"
+
+  - nombre: "Balcarce 1340"
+    direccion: "Balcarce 1340"
+    aliases:
+      - "Balcarce 1340"
+
+  - nombre: "Paso 170"
+    direccion: "Paso 170"
+    aliases:
+      - "Paso 170"
+
+  - nombre: "Bertres 430"
+    direccion: "Bertres 430"
+    aliases:
+      - "Bertres 430"
+
+  - nombre: "Paunero 2764"
+    direccion: "Paunero 2764"
+    aliases:
+      - "Paunero 2764"
+
+  - nombre: "Reconquista 1046"
+    direccion: "Reconquista 1046"
+    aliases:
+      - "Reconquista 1046"
