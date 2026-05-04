@@ -221,9 +221,9 @@ async def iniciar_servicios():
     await inicializar_db()
     logger.info("Base de datos inicializada")
     scheduler = AsyncIOScheduler(timezone="America/Argentina/Buenos_Aires")
-    scheduler.add_job(enviar_resumen_diario, CronTrigger(hour=20, minute=0, timezone="America/Argentina/Buenos_Aires"))
+    # scheduler.add_job(enviar_resumen_diario, CronTrigger(hour=20, minute=0, timezone="America/Argentina/Buenos_Aires"))
     scheduler.start()
-    logger.info("Scheduler iniciado — resumen diario a las 20:00hs")
+    logger.info("Scheduler iniciado — resumen diario desactivado")
 
 
 async def procesar_mensaje_cliente(telefono: str, texto: str):
