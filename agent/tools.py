@@ -95,15 +95,7 @@ async def notificar_grupo_solicitud(telefono_cliente: str, resumen: str, proveed
         logger.warning("WHAPI_GROUP_ID no configurado — notificación no enviada")
         return False
 
-    id_str = f" #{solicitud_id}" if solicitud_id else ""
-    mensaje = (
-        f"📋 *NUEVA SOLICITUD DE SERVICIO{id_str}*\n"
-        f"─────────────────────────\n"
-        f"{resumen}\n"
-        f"─────────────────────────\n"
-        f"📱 WhatsApp cliente: {telefono_cliente}\n"
-        f"🕐 {datetime.now().strftime('%d/%m/%Y %H:%M')}hs"
-    )
+    mensaje = resumen
 
     if proveedor:
         # Z-API usa formato "{id}-group" para grupos
