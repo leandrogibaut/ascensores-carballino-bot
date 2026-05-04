@@ -103,7 +103,30 @@ async def generar_respuesta(mensaje: str, historial: list[dict]) -> str:
         return obtener_mensaje_error()
 
 
+_PALABRAS_RECLAMO = {
+    "reclamo", "reclamo tecnico", "reclamo técnico", "servicio tecnico", "servicio técnico",
+    "no funciona", "fallo", "falla", "averia", "avería", "ruido", "puerta", "boton", "botón",
+    "ascensor parado", "ascensor trabado",
+}
+_PALABRAS_ADMIN = {
+    "administracion", "administración", "factura", "facturación", "pago", "abono",
+    "contrato", "recibo", "oficina", "deuda", "transferencia",
+}
+
+
 async def clasificar_intencion(texto: str) -> str:
+    texto_norm = texto.lower().strip()
+
+    for kw in _PALABRAS_RECLAMO:
+        if kw in texto_norm:
+            logger.info(f"clasificar_intencion resultado: reclamo para texto: {texto}")
+            return "reclamo"
+
+    for kw in _PALABRAS_ADMIN:
+        if kw in texto_norm:
+            logger.info(f"clasificar_intencion resultado: administracion para texto: {texto}")
+            return "administracion"
+
     try:
         response = await client.chat.completions.create(
             model=MODELO_CHAT,
@@ -114,7 +137,10 @@ async def clasificar_intencion(texto: str) -> str:
             ]
         )
         resultado = response.choices[0].message.content.strip().lower()
-        return resultado if resultado in ["reclamo", "administracion", "desconocido"] else "desconocido"
+        resultado = resultado if resultado in ["reclamo", "administracion", "desconocido"] else "desconocido"
     except Exception as e:
         logger.error(f"Error clasificando: {e}")
-        return "desconocido"
+        resultado = "desconocido"
+
+    logger.info(f"clasificar_intencion resultado: {resultado} para texto: {texto}")
+    return resultado
