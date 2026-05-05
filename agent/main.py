@@ -8,6 +8,7 @@ Funciona con cualquier proveedor (Whapi, Meta, Twilio) gracias a la capa de prov
 
 import os
 import re
+import json
 import asyncio
 import logging
 from contextlib import asynccontextmanager
@@ -152,12 +153,35 @@ def analizar_mensaje_tecnico(texto: str) -> tuple[str, str]:
 
 
 async def enviar_resumen_diario():
-    """Genera y envía el reporte diario a las 20:00hs al número configurado."""
+    """Envía a las 20:00hs un JSON con los mensajes del grupo del día al número configurado."""
     try:
-        reporte = await generar_reporte_diario_preview()
-        resultado = await proveedor.enviar_mensaje(REPORTE_DIARIO_TELEFONO, reporte)
+        tz = ZoneInfo("America/Argentina/Buenos_Aires")
+        hoy = datetime.now(tz).date()
+
+        mensajes = await obtener_mensajes_grupo_por_fecha(hoy)
+
+        payload = {
+            "source": "Reclamos Ascensores Carballino",
+            "date": hoy.isoformat(),
+            "timezone": "America/Argentina/Buenos_Aires",
+            "messages": [
+                {
+                    "time": m.timestamp.replace(tzinfo=ZoneInfo("UTC")).astimezone(tz).strftime("%H:%M"),
+                    "sender": m.nombre_remitente or "",
+                    "phone": m.telefono_remitente or "",
+                    "text": m.texto or "",
+                    "message_id": m.mensaje_id or "",
+                    "reference_message_id": m.reference_message_id or "",
+                    "quoted_text": m.texto_citado or "",
+                }
+                for m in mensajes
+            ],
+        }
+
+        texto_json = json.dumps(payload, ensure_ascii=False)
+        resultado = await proveedor.enviar_mensaje(REPORTE_DIARIO_TELEFONO, texto_json)
         if resultado:
-            logger.info(f"Reporte diario enviado a {REPORTE_DIARIO_TELEFONO}")
+            logger.info(f"Reporte diario enviado a {REPORTE_DIARIO_TELEFONO} ({len(mensajes)} mensajes)")
         else:
             logger.error(f"Error al enviar reporte diario a {REPORTE_DIARIO_TELEFONO}")
     except Exception as e:
