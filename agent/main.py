@@ -193,6 +193,8 @@ DEBOUNCE_SEGUNDOS = 10          # conversación activa (historial reciente)
 DEBOUNCE_NUEVO_SEGUNDOS = 120   # primer mensaje / conversación nueva (sin historial)
 mensajes_pendientes: dict[str, list[str]] = {}
 tareas_pendientes: dict[str, "asyncio.Task"] = {}
+_MAX_IDS_PROCESADOS = 5000
+mensajes_webhook_procesados: set[str] = set()
 
 conversaciones_estado: dict[str, dict] = {}
 
@@ -392,9 +394,18 @@ async def webhook_handler(request: Request):
                 if not (telefono_norm_p == grupo_norm_p and grupo_norm_p) and msg.telefono:
                     await marcar_intervencion_humana(msg.telefono)
                     logger.info(f"Intervención humana detectada en conversación con {msg.telefono}, bot silenciado 6hs")
+                    tarea_p = tareas_pendientes.pop(msg.telefono, None)
+                    if tarea_p and not tarea_p.done():
+                        tarea_p.cancel()
+                    mensajes_pendientes.pop(msg.telefono, None)
                 continue
 
             if not msg.texto:
+                continue
+
+            # Descartar mensajes enviados por la API (no por un humano)
+            if msg.from_api:
+                logger.debug(f"Mensaje fromApi ignorado: {msg.telefono}")
                 continue
 
             # ── Números excluidos de respuestas automáticas ──
@@ -480,6 +491,15 @@ async def webhook_handler(request: Request):
                 if await hay_intervencion_reciente(msg.telefono):
                     logger.info(f"Mensaje de {msg.telefono} ignorado: intervención humana reciente")
                     continue
+
+            # Deduplicar por message_id (protege contra webhooks duplicados de Z-API)
+            if msg.message_id:
+                if msg.message_id in mensajes_webhook_procesados:
+                    logger.debug(f"Webhook duplicado ignorado: {msg.message_id}")
+                    continue
+                mensajes_webhook_procesados.add(msg.message_id)
+                if len(mensajes_webhook_procesados) > _MAX_IDS_PROCESADOS:
+                    mensajes_webhook_procesados.clear()
 
             logger.info(f"Mensaje de {msg.telefono}: {msg.texto}")
 

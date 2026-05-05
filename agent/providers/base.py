@@ -22,6 +22,7 @@ class MensajeEntrante:
     message_id: str | None = None            # ID propio del mensaje (para tracking)
     nombre_remitente: str = ""               # Nombre del remitente (útil en grupos)
     texto_citado: str | None = None          # Texto del mensaje citado (si Z-API lo trae)
+    from_api: bool = False                   # True si fue enviado por la API (no por un humano)
 
 
 class ProveedorWhatsApp(ABC):

@@ -115,10 +115,11 @@ class ProveedorZapi(ProveedorWhatsApp):
             texto=texto,
             mensaje_id=body.get("messageId", ""),
             es_propio=es_propio,
-            reference_message_id=body.get("referenceMessageId"),  # 2A: ID del mensaje citado (reply)
-            message_id=body.get("messageId"),                     # 2A: ID propio del mensaje
+            reference_message_id=body.get("referenceMessageId"),
+            message_id=body.get("messageId"),
             nombre_remitente=body.get("senderName", ""),
             texto_citado=texto_citado or None,
+            from_api=body.get("fromApi", False),
         ))
         return mensajes
 
