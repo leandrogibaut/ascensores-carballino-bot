@@ -289,6 +289,42 @@ async def procesar_acumulados(telefono: str):
     if estado_conv == "reclamo":
         await procesar_mensaje_cliente(telefono, texto_combinado)
         return
+    if estado_conv == "esperando_intencion":
+        intencion = await clasificar_intencion(texto_combinado)
+        if intencion == "reclamo":
+            marcar_estado_conversacion(telefono, "reclamo")
+            mensaje_inicial = (
+                "Hola, soy Olivia de Ascensores Carballino 👋 "
+                "Para registrar el reclamo necesito algunos datos:\n\n"
+                "• *¿Cuál es la dirección del edificio?*\n"
+                "• *¿Qué problema tiene el ascensor?*\n"
+                "• *¿Quién abre? (encargado, administrador, etc.) ¿En qué horarios?*\n\n"
+                "Puede respondernos con toda la información junta o por partes, no se preocupe 😊"
+            )
+            await guardar_mensaje(telefono, "assistant", mensaje_inicial)
+            await proveedor.enviar_mensaje(telefono, mensaje_inicial)
+            return
+        if intencion == "administracion":
+            marcar_estado_conversacion(telefono, "esperando_consulta_admin")
+            if oficina_esta_disponible():
+                mensaje_admin = "Hola 👋 Por favor, ¿cuál es su consulta? En breve la derivamos al área correspondiente."
+            else:
+                mensaje_admin = (
+                    "Gracias por comunicarse con Ascensores Carballino. "
+                    "El área de administración atiende de lunes a viernes de 8 a 18hs. "
+                    "Por favor deje su consulta y será atendida el próximo día hábil 📋"
+                )
+            await guardar_mensaje(telefono, "assistant", mensaje_admin)
+            await proveedor.enviar_mensaje(telefono, mensaje_admin)
+            return
+        # Desconocido: preguntar de forma más específica sin repetir el mismo mensaje
+        mensaje_aclarar = (
+            "Disculpe, para poder derivarlo correctamente, "
+            "¿necesita enviar técnicos por una falla del ascensor?"
+        )
+        await guardar_mensaje(telefono, "assistant", mensaje_aclarar)
+        await proveedor.enviar_mensaje(telefono, mensaje_aclarar)
+        return
     intencion = await clasificar_intencion(texto_combinado)
     if intencion == "reclamo":
         marcar_estado_conversacion(telefono, "reclamo")
