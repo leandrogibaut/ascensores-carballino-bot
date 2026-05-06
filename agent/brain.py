@@ -104,9 +104,19 @@ async def generar_respuesta(mensaje: str, historial: list[dict]) -> str:
 
 
 _PALABRAS_RECLAMO = {
-    "reclamo", "reclamo tecnico", "reclamo técnico", "servicio tecnico", "servicio técnico",
-    "no funciona", "fallo", "falla", "averia", "avería", "ruido", "puerta", "boton", "botón",
-    "ascensor parado", "ascensor trabado",
+    "tecnico", "técnico",
+    "reclamo tecnico", "reclamo técnico",
+    "servicio tecnico", "servicio técnico",
+    "ascensor", "asc",
+    "no funciona", "no anda",
+    "parado", "trabado",
+    "falla", "fallo", "averia", "avería",
+    "ruido", "ruidoso", "suena", "sonido", "se escucha", "escucha",
+    "video", "audio",
+    "desnivelado", "no nivela",
+    "puerta", "boton", "botón",
+    "piso",
+    "reclamo",
 }
 _PALABRAS_ADMIN = {
     "administracion", "administración", "factura", "facturación", "pago", "abono",
@@ -117,15 +127,16 @@ _PALABRAS_ADMIN = {
 async def clasificar_intencion(texto: str) -> str:
     texto_norm = texto.lower().strip()
 
-    for kw in _PALABRAS_RECLAMO:
-        if kw in texto_norm:
-            logger.info(f"clasificar_intencion resultado: reclamo para texto: {texto}")
-            return "reclamo"
-
+    # Administración tiene prioridad sobre reclamo para evitar falsos positivos
     for kw in _PALABRAS_ADMIN:
         if kw in texto_norm:
-            logger.info(f"clasificar_intencion resultado: administracion para texto: {texto}")
+            logger.info(f"clasificar_intencion keyword administracion: {texto}")
             return "administracion"
+
+    for kw in _PALABRAS_RECLAMO:
+        if kw in texto_norm:
+            logger.info(f"clasificar_intencion keyword reclamo: {texto}")
+            return "reclamo"
 
     try:
         response = await client.chat.completions.create(
