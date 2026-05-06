@@ -195,6 +195,7 @@ mensajes_pendientes: dict[str, list[str]] = {}
 tareas_pendientes: dict[str, "asyncio.Task"] = {}
 _MAX_IDS_PROCESADOS = 5000
 mensajes_webhook_procesados: set[str] = set()
+mensajes_enviados_por_bot: set[str] = set()
 
 conversaciones_estado: dict[str, dict] = {}
 
@@ -225,6 +226,16 @@ async def iniciar_servicios():
     scheduler.add_job(enviar_resumen_diario, CronTrigger(hour=20, minute=0, timezone="America/Argentina/Buenos_Aires"))
     scheduler.start()
     logger.info("Scheduler iniciado — reporte diario a las 20:00hs")
+
+
+async def _enviar_registrando(telefono: str, mensaje: str) -> str | None:
+    """Envía un mensaje y registra su messageId para detectar intervenciones humanas futuras."""
+    msg_id = await proveedor.enviar_mensaje(telefono, mensaje)
+    if msg_id:
+        mensajes_enviados_por_bot.add(msg_id)
+        if len(mensajes_enviados_por_bot) > _MAX_IDS_PROCESADOS:
+            mensajes_enviados_por_bot.clear()
+    return msg_id
 
 
 async def procesar_mensaje_cliente(telefono: str, texto: str):
@@ -262,7 +273,7 @@ async def procesar_mensaje_cliente(telefono: str, texto: str):
 
     await guardar_mensaje(telefono, "user", texto)
     await guardar_mensaje(telefono, "assistant", respuesta)
-    await proveedor.enviar_mensaje(telefono, respuesta)
+    await _enviar_registrando(telefono, respuesta)
     logger.info(f"Respuesta a {telefono}: {respuesta}")
 
 
@@ -302,7 +313,7 @@ async def procesar_acumulados(telefono: str):
                 "Puede respondernos con toda la información junta o por partes, no se preocupe 😊"
             )
             await guardar_mensaje(telefono, "assistant", mensaje_inicial)
-            await proveedor.enviar_mensaje(telefono, mensaje_inicial)
+            await _enviar_registrando(telefono, mensaje_inicial)
             return
         if intencion == "administracion":
             marcar_estado_conversacion(telefono, "esperando_consulta_admin")
@@ -315,7 +326,7 @@ async def procesar_acumulados(telefono: str):
                     "Por favor deje su consulta y será atendida el próximo día hábil 📋"
                 )
             await guardar_mensaje(telefono, "assistant", mensaje_admin)
-            await proveedor.enviar_mensaje(telefono, mensaje_admin)
+            await _enviar_registrando(telefono, mensaje_admin)
             return
         # Desconocido: preguntar de forma más específica sin repetir el mismo mensaje
         mensaje_aclarar = (
@@ -323,7 +334,7 @@ async def procesar_acumulados(telefono: str):
             "¿necesita enviar técnicos por una falla del ascensor?"
         )
         await guardar_mensaje(telefono, "assistant", mensaje_aclarar)
-        await proveedor.enviar_mensaje(telefono, mensaje_aclarar)
+        await _enviar_registrando(telefono, mensaje_aclarar)
         return
     intencion = await clasificar_intencion(texto_combinado)
     if intencion == "reclamo":
@@ -337,7 +348,7 @@ async def procesar_acumulados(telefono: str):
             "Puede respondernos con toda la información junta o por partes, no se preocupe 😊"
         )
         await guardar_mensaje(telefono, "assistant", mensaje_inicial)
-        await proveedor.enviar_mensaje(telefono, mensaje_inicial)
+        await _enviar_registrando(telefono, mensaje_inicial)
         return
     if intencion == "administracion":
         marcar_estado_conversacion(telefono, "esperando_consulta_admin")
@@ -350,7 +361,7 @@ async def procesar_acumulados(telefono: str):
                 "Por favor deje su consulta y será atendida el próximo día hábil 📋"
             )
         await guardar_mensaje(telefono, "assistant", mensaje_admin)
-        await proveedor.enviar_mensaje(telefono, mensaje_admin)
+        await _enviar_registrando(telefono, mensaje_admin)
         return
     marcar_estado_conversacion(telefono, "esperando_intencion")
     mensaje_desconocido = (
@@ -359,7 +370,7 @@ async def procesar_acumulados(telefono: str):
         "o una *consulta administrativa*?"
     )
     await guardar_mensaje(telefono, "assistant", mensaje_desconocido)
-    await proveedor.enviar_mensaje(telefono, mensaje_desconocido)
+    await _enviar_registrando(telefono, mensaje_desconocido)
     return
 
 
@@ -456,11 +467,11 @@ async def webhook_handler(request: Request):
                 comando = msg.texto.strip().upper()
                 if comando == "PAUSA BOT":
                     bot_activo = False
-                    await proveedor.enviar_mensaje(msg.telefono, "⏸️ Bot pausado. Los mensajes no serán respondidos automáticamente.")
+                    await _enviar_registrando(msg.telefono, "⏸️ Bot pausado. Los mensajes no serán respondidos automáticamente.")
                     continue
                 elif comando == "ACTIVAR BOT":
                     bot_activo = True
-                    await proveedor.enviar_mensaje(msg.telefono, "▶️ Bot activado. Olivia vuelve a responder automáticamente.")
+                    await _enviar_registrando(msg.telefono, "▶️ Bot activado. Olivia vuelve a responder automáticamente.")
                     continue
 
             # ── Si el bot está pausado, ignorar mensajes ──
@@ -517,7 +528,7 @@ async def webhook_handler(request: Request):
                     "Hola, por este número no atendemos llamadas de WhatsApp. "
                     "Para emergencias llamá al 4301-3967 o escribinos aquí y te atendemos enseguida."
                 )
-                await proveedor.enviar_mensaje(msg.telefono, aviso)
+                await _enviar_registrando(msg.telefono, aviso)
                 continue
 
             # ── Chequeo de intervención humana (solo chats 1-a-1) ──
@@ -527,6 +538,17 @@ async def webhook_handler(request: Request):
                 if await hay_intervencion_reciente(msg.telefono):
                     logger.info(f"Mensaje de {msg.telefono} ignorado: intervención humana reciente")
                     continue
+
+            # Si el cliente cita un mensaje no enviado por Olivia → intervención humana manual
+            # (Z-API no envía webhook del mensaje humano, pero sí del reply del cliente)
+            if msg.reference_message_id and msg.reference_message_id not in mensajes_enviados_por_bot:
+                await marcar_intervencion_humana(msg.telefono)
+                tarea_ref = tareas_pendientes.pop(msg.telefono, None)
+                if tarea_ref and not tarea_ref.done():
+                    tarea_ref.cancel()
+                mensajes_pendientes.pop(msg.telefono, None)
+                logger.info(f"Cliente {msg.telefono} respondió citando mensaje humano/manual; Olivia queda silenciada")
+                continue
 
             # Deduplicar por message_id (protege contra webhooks duplicados de Z-API)
             if msg.message_id:
