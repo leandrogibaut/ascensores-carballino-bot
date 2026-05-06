@@ -90,12 +90,14 @@ class ProveedorZapi(ProveedorWhatsApp):
         elif "document" in body:
             texto = body["document"].get("caption", "")
         elif subtipo in ("audio", "ptt"):
-            # Audio: Z-API provee una URL de descarga
             audio_url = body.get("audio", {}).get("audioUrl", "")
             if audio_url:
                 texto = await self._transcribir_audio_url(audio_url)
-            if not texto:
-                texto = "[Audio no transcripto]"
+                if texto:
+                    logger.info(f"Audio transcripto de {telefono}: {texto}")
+                else:
+                    logger.warning(f"Transcripción de audio fallida o vacía para {telefono} — mensaje descartado")
+            # Sin transcripción: texto queda vacío → se descarta en el check de abajo
         elif notificacion == "CALL_VOICE":
             # Llamada en curso — ignorar, ya respondemos en CALL_MISSED_VOICE
             return []
@@ -173,25 +175,34 @@ class ProveedorZapi(ProveedorWhatsApp):
         """Descarga el audio desde la URL de Z-API y lo transcribe con Groq."""
         groq_key = os.getenv("GROQ_API_KEY")
         if not groq_key:
+            logger.warning("GROQ_API_KEY no configurada — transcripción de audio deshabilitada")
             return ""
         async with httpx.AsyncClient(timeout=30) as client:
+            logger.info(f"Descargando audio desde Z-API: {audio_url}")
             r = await client.get(audio_url)
+            logger.info(f"Descarga audio — status: {r.status_code}, content-type: {r.headers.get('content-type', '(sin content-type)')}")
             if r.status_code != 200:
-                logger.error(f"Error descargando audio Z-API: {r.status_code}")
+                logger.error(f"Error descargando audio Z-API: {r.status_code} — {r.text[:200]}")
                 return ""
             audio_bytes = r.content
+            logger.info(f"Audio descargado — tamaño: {len(audio_bytes)} bytes")
             content_type = r.headers.get("content-type", "audio/ogg")
             extension = "ogg"
             if "mp4" in content_type or "mpeg" in content_type:
                 extension = "mp3"
+            nombre_archivo = f"audio.{extension}"
+            logger.info(f"Enviando a Groq Whisper — archivo: {nombre_archivo}, content-type: {content_type}")
             groq_headers = {"Authorization": f"Bearer {groq_key}"}
             r2 = await client.post(
                 "https://api.groq.com/openai/v1/audio/transcriptions",
                 headers=groq_headers,
-                files={"file": (f"audio.{extension}", audio_bytes, content_type)},
+                files={"file": (nombre_archivo, audio_bytes, content_type)},
                 data={"model": "whisper-large-v3-turbo", "language": "es"},
             )
+            logger.info(f"Groq Whisper — status: {r2.status_code}")
             if r2.status_code != 200:
-                logger.error(f"Error Groq Whisper: {r2.status_code}")
+                logger.error(f"Error Groq Whisper: {r2.status_code} — {r2.text[:200]}")
                 return ""
-            return r2.json().get("text", "").strip()
+            texto = r2.json().get("text", "").strip()
+            logger.info(f"Transcripción exitosa — {len(texto)} caracteres")
+            return texto
