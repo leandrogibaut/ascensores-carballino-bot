@@ -304,8 +304,9 @@ async def procesar_acumulados(telefono: str):
         await procesar_mensaje_cliente(telefono, texto_combinado)
         return
 
-    # Estado None o "esperando_intencion": clasificar intención
-    intencion = await clasificar_intencion(texto_combinado)
+    # Estado None o "esperando_intencion": clasificar intención con contexto
+    historial_ctx = await obtener_historial(telefono)
+    intencion = await clasificar_intencion(texto_combinado, historial_ctx)
 
     if intencion == "reclamo":
         marcar_estado_conversacion(telefono, "reclamo")
