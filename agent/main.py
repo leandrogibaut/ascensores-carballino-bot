@@ -287,10 +287,13 @@ async def procesar_acumulados(telefono: str):
         return
     texto_combinado = "\n".join(textos)
     logger.info(f"Procesando {len(textos)} mensaje(s) de {telefono}: {texto_combinado}")
+
     if await hay_intervencion_reciente(telefono):
         logger.info(f"{telefono} silenciado por intervención humana")
         return
+
     estado_conv = obtener_estado_conversacion(telefono)
+
     if estado_conv == "pendiente_admin":
         logger.info(f"{telefono} en pendiente_admin")
         return
@@ -300,46 +303,13 @@ async def procesar_acumulados(telefono: str):
     if estado_conv == "reclamo":
         await procesar_mensaje_cliente(telefono, texto_combinado)
         return
-    if estado_conv == "esperando_intencion":
-        intencion = await clasificar_intencion(texto_combinado)
-        if intencion == "reclamo":
-            marcar_estado_conversacion(telefono, "reclamo")
-            mensaje_inicial = (
-                "Hola, soy Olivia de Ascensores Carballino 👋 "
-                "Para registrar el reclamo necesito algunos datos:\n\n"
-                "• *¿Cuál es la dirección del edificio?*\n"
-                "• *¿Qué problema tiene el ascensor?*\n"
-                "• *¿Quién abre? (encargado, administrador, etc.) ¿En qué horarios?*\n\n"
-                "Puede respondernos con toda la información junta o por partes, no se preocupe 😊"
-            )
-            await guardar_mensaje(telefono, "assistant", mensaje_inicial)
-            await _enviar_registrando(telefono, mensaje_inicial)
-            return
-        if intencion == "administracion":
-            marcar_estado_conversacion(telefono, "esperando_consulta_admin")
-            if oficina_esta_disponible():
-                mensaje_admin = "Hola 👋 Por favor, ¿cuál es su consulta? En breve la derivamos al área correspondiente."
-            else:
-                mensaje_admin = (
-                    "Gracias por comunicarse con Ascensores Carballino. "
-                    "El área de administración atiende de lunes a viernes de 8 a 18hs. "
-                    "Por favor deje su consulta y será atendida el próximo día hábil 📋"
-                )
-            await guardar_mensaje(telefono, "assistant", mensaje_admin)
-            await _enviar_registrando(telefono, mensaje_admin)
-            return
-        # Desconocido: preguntar de forma más específica sin repetir el mismo mensaje
-        mensaje_aclarar = (
-            "Disculpe, para poder derivarlo correctamente, "
-            "¿necesita enviar técnicos por una falla del ascensor?"
-        )
-        await guardar_mensaje(telefono, "assistant", mensaje_aclarar)
-        await _enviar_registrando(telefono, mensaje_aclarar)
-        return
+
+    # Estado None o "esperando_intencion": clasificar intención
     intencion = await clasificar_intencion(texto_combinado)
+
     if intencion == "reclamo":
         marcar_estado_conversacion(telefono, "reclamo")
-        mensaje_inicial = (
+        mensaje = (
             "Hola, soy Olivia de Ascensores Carballino 👋 "
             "Para registrar el reclamo necesito algunos datos:\n\n"
             "• *¿Cuál es la dirección del edificio?*\n"
@@ -347,31 +317,41 @@ async def procesar_acumulados(telefono: str):
             "• *¿Quién abre? (encargado, administrador, etc.) ¿En qué horarios?*\n\n"
             "Puede respondernos con toda la información junta o por partes, no se preocupe 😊"
         )
-        await guardar_mensaje(telefono, "assistant", mensaje_inicial)
-        await _enviar_registrando(telefono, mensaje_inicial)
+        await guardar_mensaje(telefono, "assistant", mensaje)
+        await _enviar_registrando(telefono, mensaje)
         return
+
     if intencion == "administracion":
         marcar_estado_conversacion(telefono, "esperando_consulta_admin")
         if oficina_esta_disponible():
-            mensaje_admin = "Hola 👋 Por favor, ¿cuál es su consulta? En breve la derivamos al área correspondiente."
+            mensaje = "Hola 👋 Por favor, ¿cuál es su consulta? En breve la derivamos al área correspondiente."
         else:
-            mensaje_admin = (
+            mensaje = (
                 "Gracias por comunicarse con Ascensores Carballino. "
                 "El área de administración atiende de lunes a viernes de 8 a 18hs. "
                 "Por favor deje su consulta y será atendida el próximo día hábil 📋"
             )
-        await guardar_mensaje(telefono, "assistant", mensaje_admin)
-        await _enviar_registrando(telefono, mensaje_admin)
+        await guardar_mensaje(telefono, "assistant", mensaje)
+        await _enviar_registrando(telefono, mensaje)
         return
-    marcar_estado_conversacion(telefono, "esperando_intencion")
-    mensaje_desconocido = (
-        "Hola, soy Olivia de Ascensores Carballino 👋 "
-        "¿Me puede indicar si se trata de un *reclamo técnico* "
-        "o una *consulta administrativa*?"
-    )
-    await guardar_mensaje(telefono, "assistant", mensaje_desconocido)
-    await _enviar_registrando(telefono, mensaje_desconocido)
-    return
+
+    # Intención desconocida
+    if estado_conv == "esperando_intencion":
+        # Segunda vez sin reconocer — pregunta más específica
+        mensaje = (
+            "Disculpe, para poder derivarlo correctamente, "
+            "¿necesita enviar técnicos por una falla del ascensor?"
+        )
+    else:
+        # Primera vez — preguntar genéricamente
+        marcar_estado_conversacion(telefono, "esperando_intencion")
+        mensaje = (
+            "Hola, soy Olivia de Ascensores Carballino 👋 "
+            "¿Me puede indicar si se trata de un *reclamo técnico* "
+            "o una *consulta administrativa*?"
+        )
+    await guardar_mensaje(telefono, "assistant", mensaje)
+    await _enviar_registrando(telefono, mensaje)
 
 
 @asynccontextmanager
@@ -434,17 +414,20 @@ async def webhook_handler(request: Request):
         mensajes = await proveedor.parsear_webhook(request)
 
         for msg in mensajes:
-            # Mensajes propios (fromMe=True): registrar intervención humana y descartar
+            # Mensajes propios (fromMe=True): silenciar solo si fue un humano, no el bot
             if msg.es_propio:
                 telefono_norm_p = msg.telefono.replace("-group", "").replace("@g.us", "")
                 grupo_norm_p = GRUPO_INTERNO.replace("-group", "").replace("@g.us", "")
-                if not (telefono_norm_p == grupo_norm_p and grupo_norm_p) and msg.telefono:
-                    await marcar_intervencion_humana(msg.telefono)
-                    logger.info(f"Intervención humana detectada en conversación con {msg.telefono}, bot silenciado 6hs")
-                    tarea_p = tareas_pendientes.pop(msg.telefono, None)
-                    if tarea_p and not tarea_p.done():
-                        tarea_p.cancel()
-                    mensajes_pendientes.pop(msg.telefono, None)
+                es_grupo_p = telefono_norm_p == grupo_norm_p and bool(grupo_norm_p)
+                if not es_grupo_p and msg.telefono:
+                    es_del_bot = bool(msg.message_id and msg.message_id in mensajes_enviados_por_bot)
+                    if not es_del_bot:
+                        await marcar_intervencion_humana(msg.telefono)
+                        logger.info(f"Intervención humana en {msg.telefono} — bot silenciado 6hs")
+                        tarea_p = tareas_pendientes.pop(msg.telefono, None)
+                        if tarea_p and not tarea_p.done():
+                            tarea_p.cancel()
+                        mensajes_pendientes.pop(msg.telefono, None)
                 continue
 
             if not msg.texto:
