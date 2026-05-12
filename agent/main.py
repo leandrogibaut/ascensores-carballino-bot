@@ -23,7 +23,7 @@ from apscheduler.triggers.cron import CronTrigger
 from agent.brain import generar_respuesta
 from agent.memory import (
     inicializar_db, guardar_mensaje, obtener_historial,
-    guardar_solicitud, obtener_solicitudes_del_dia,
+    guardar_solicitud,
     actualizar_estado_solicitud, buscar_solicitud_por_direccion,
     buscar_solicitud_por_id, tiene_mensajes_recientes,
     obtener_solicitud_activa_por_telefono,
@@ -60,12 +60,6 @@ bot_activo = True
 TZ_AR = ZoneInfo("America/Argentina/Buenos_Aires")
 
 
-def oficina_esta_disponible() -> bool:
-    """Retorna True si es día hábil entre 8:00 y 18:00 hora Argentina."""
-    ahora = datetime.now(TZ_AR)
-    es_dia_habil = ahora.weekday() < 5  # 0=lunes … 4=viernes
-    es_horario = 8 <= ahora.hour < 18
-    return es_dia_habil and es_horario
 
 def formatear_resumen_solicitud(datos_raw: str) -> tuple[str, dict]:
     """Convierte el tag interno de solicitud en un párrafo corto para el grupo.
@@ -267,6 +261,11 @@ async def procesar_mensaje_cliente(telefono: str, texto: str):
         if not respuesta:
             respuesta = "Perfecto, ya registramos el reclamo y lo derivamos al equipo técnico. Muchas gracias."
 
+    if re.search(r'\[DERIVAR_ADMIN\]', respuesta):
+        marcar_estado_conversacion(telefono, "pendiente_admin")
+        respuesta = re.sub(r'\[DERIVAR_ADMIN\]', '', respuesta).strip()
+        logger.info(f"Consulta administrativa de {telefono} derivada a equipo humano")
+
     if not respuesta or not respuesta.strip():
         logger.error(f"Respuesta vacía generada para {telefono}. No se envía mensaje.")
         return
@@ -278,7 +277,6 @@ async def procesar_mensaje_cliente(telefono: str, texto: str):
 
 
 async def procesar_acumulados(telefono: str):
-    from agent.brain import clasificar_intencion
     debounce = DEBOUNCE_SEGUNDOS if await tiene_mensajes_recientes(telefono) else DEBOUNCE_NUEVO_SEGUNDOS
     await asyncio.sleep(debounce)
     textos = mensajes_pendientes.pop(telefono, [])
@@ -292,67 +290,11 @@ async def procesar_acumulados(telefono: str):
         logger.info(f"{telefono} silenciado por intervención humana")
         return
 
-    estado_conv = obtener_estado_conversacion(telefono)
-
-    if estado_conv == "pendiente_admin":
-        logger.info(f"{telefono} en pendiente_admin")
-        return
-    if estado_conv == "esperando_consulta_admin":
-        marcar_estado_conversacion(telefono, "pendiente_admin")
-        return
-    if estado_conv == "reclamo":
-        await procesar_mensaje_cliente(telefono, texto_combinado)
+    if obtener_estado_conversacion(telefono) == "pendiente_admin":
+        logger.info(f"{telefono} en pendiente_admin — esperando intervención humana")
         return
 
-    # Estado None o "esperando_intencion": clasificar intención con contexto
-    historial_ctx = await obtener_historial(telefono)
-    intencion = await clasificar_intencion(texto_combinado, historial_ctx)
-
-    if intencion == "reclamo":
-        marcar_estado_conversacion(telefono, "reclamo")
-        mensaje = (
-            "Hola, soy Olivia de Ascensores Carballino 👋 "
-            "Para registrar el reclamo necesito algunos datos:\n\n"
-            "• *¿Cuál es la dirección del edificio?*\n"
-            "• *¿Qué problema tiene el ascensor?*\n"
-            "• *¿Quién abre? (encargado, administrador, etc.) ¿En qué horarios?*\n\n"
-            "Puede respondernos con toda la información junta o por partes, no se preocupe 😊"
-        )
-        await guardar_mensaje(telefono, "assistant", mensaje)
-        await _enviar_registrando(telefono, mensaje)
-        return
-
-    if intencion == "administracion":
-        marcar_estado_conversacion(telefono, "esperando_consulta_admin")
-        if oficina_esta_disponible():
-            mensaje = "Hola 👋 Por favor, ¿cuál es su consulta? En breve la derivamos al área correspondiente."
-        else:
-            mensaje = (
-                "Gracias por comunicarse con Ascensores Carballino. "
-                "El área de administración atiende de lunes a viernes de 8 a 18hs. "
-                "Por favor deje su consulta y será atendida el próximo día hábil 📋"
-            )
-        await guardar_mensaje(telefono, "assistant", mensaje)
-        await _enviar_registrando(telefono, mensaje)
-        return
-
-    # Intención desconocida
-    if estado_conv == "esperando_intencion":
-        # Segunda vez sin reconocer — pregunta más específica
-        mensaje = (
-            "Disculpe, para poder derivarlo correctamente, "
-            "¿necesita enviar técnicos por una falla del ascensor?"
-        )
-    else:
-        # Primera vez — preguntar genéricamente
-        marcar_estado_conversacion(telefono, "esperando_intencion")
-        mensaje = (
-            "Hola, soy Olivia de Ascensores Carballino 👋 "
-            "¿Me puede indicar si se trata de un *reclamo técnico* "
-            "o una *consulta administrativa*?"
-        )
-    await guardar_mensaje(telefono, "assistant", mensaje)
-    await _enviar_registrando(telefono, mensaje)
+    await procesar_mensaje_cliente(telefono, texto_combinado)
 
 
 @asynccontextmanager
