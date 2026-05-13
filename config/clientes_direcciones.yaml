@@ -181,6 +181,8 @@ clientes:
     aliases:
       - "Hilanderia Aldeana S.A."
       - "Hilanderia Aldeana"
+      - "Andalgalá 2243"
+      - "Andalgala 2243"
 
   - nombre: "Agüero 1131"
     direccion: "Agüero 1131"
@@ -387,6 +389,8 @@ clientes:
     direccion: "Av. De Mayo 935"
     aliases:
       - "Av. De Mayo 935"
+      - "Hotel Alcázar"
+      - "Hotel Alcazar"
       - "Banigo"
 
   - nombre: "Río de Janeiro 43"
@@ -423,11 +427,13 @@ clientes:
 
   - nombre: "Lavalle 1491"
     direccion: "Lavalle 1491"
+    nota: "Cliente Galvalisi — distinto consorcio que Paraná 525"
     aliases:
       - "Lavalle 1491"
 
   - nombre: "Paraná 525"
     direccion: "Paraná 525"
+    nota: "Cliente Galvalisi — distinto consorcio que Lavalle 1491"
     aliases:
       - "Paraná 525"
 
@@ -450,6 +456,7 @@ clientes:
     direccion: "Sarmiento 1272"
     aliases:
       - "Sarmiento 1272"
+      - "Face"  # apodo del cliente; no confundir con "fase" eléctrica
 
   - nombre: "Pedro Goyena 585"
     direccion: "Pedro Goyena 585"
@@ -636,9 +643,10 @@ clientes:
     aliases:
       - "Tres de Febrero 1831"
 
-  - nombre: "Combate de los Pozos"
-    direccion: "Combate de los Pozos"
+  - nombre: "Combate de los Pozos 390"
+    direccion: "Combate de los Pozos 390"
     aliases:
+      - "Combate de los Pozos 390"
       - "Combate de los Pozos"
 
   - nombre: "Acuña de Figueroa 139"
@@ -656,6 +664,7 @@ clientes:
     aliases:
       - "Arzobispado"
       - "Arzovispado"
+      - "Ayacucho 1453"
 
   - nombre: "Ramón Falcón 1654"
     direccion: "Ramón Falcón 1654"
@@ -734,10 +743,14 @@ clientes:
 
   - nombre: "Algodonera Dumont 3454"
     direccion: "Algodonera Dumont 3454"
+    nota: "1 cliente con 3 direcciones: Algodonera Dumont 3454, Alvarez Thomas 198, Concepción Arenal 3425"
     aliases:
       - "Algodonera Dumont 3454"
       - "Algodonera"
       - "Dumont"
+      - "Alvarez Thomas 198"
+      - "Concepción Arenal 3425"
+      - "Concepcion Arenal 3425"
 
   - nombre: "Guido 1852"
     direccion: "Guido 1852"
