@@ -60,7 +60,7 @@ bot_activo = True
 TZ_AR = ZoneInfo("America/Argentina/Buenos_Aires")
 
 AVISO_EMERGENCIA = (
-    "\n\nAnte cualquier problema o emergencia, comunicate directamente "
+    "\n\nAnte cualquier problema o emergencia, comuníquese directamente "
     "por llamada telefónica común al 4301-3967 o al 1565024510. "
     "No por llamada de WhatsApp."
 )
