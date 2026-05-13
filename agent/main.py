@@ -379,6 +379,7 @@ async def webhook_handler(request: Request):
                     es_del_bot = bool(msg.message_id and msg.message_id in mensajes_enviados_por_bot)
                     if not es_del_bot:
                         await marcar_intervencion_humana(msg.telefono)
+                        limpiar_estado_conversacion(msg.telefono)
                         logger.info(f"Intervención humana en {msg.telefono} — bot silenciado 6hs")
                         tarea_p = tareas_pendientes.pop(msg.telefono, None)
                         if tarea_p and not tarea_p.done():
@@ -482,6 +483,7 @@ async def webhook_handler(request: Request):
             # (Z-API no envía webhook del mensaje humano, pero sí del reply del cliente)
             if msg.reference_message_id and msg.reference_message_id not in mensajes_enviados_por_bot:
                 await marcar_intervencion_humana(msg.telefono)
+                limpiar_estado_conversacion(msg.telefono)
                 tarea_ref = tareas_pendientes.pop(msg.telefono, None)
                 if tarea_ref and not tarea_ref.done():
                     tarea_ref.cancel()
