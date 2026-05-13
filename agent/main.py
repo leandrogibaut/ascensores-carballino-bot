@@ -59,6 +59,17 @@ bot_activo = True
 
 TZ_AR = ZoneInfo("America/Argentina/Buenos_Aires")
 
+AVISO_EMERGENCIA = (
+    "\n\nAnte cualquier problema o emergencia, comunicate directamente "
+    "por llamada telefónica común al 4301-3967 o al 1565024510. "
+    "No por llamada de WhatsApp."
+)
+
+
+def asegurar_aviso_emergencia(texto: str) -> str:
+    if "4301-3967" in texto or "1565024510" in texto:
+        return texto
+    return texto.strip() + AVISO_EMERGENCIA
 
 
 def formatear_resumen_solicitud(datos_raw: str) -> tuple[str, dict]:
@@ -269,6 +280,8 @@ async def procesar_mensaje_cliente(telefono: str, texto: str):
     if not respuesta or not respuesta.strip():
         logger.error(f"Respuesta vacía generada para {telefono}. No se envía mensaje.")
         return
+
+    respuesta = asegurar_aviso_emergencia(respuesta)
 
     await guardar_mensaje(telefono, "user", texto)
     await guardar_mensaje(telefono, "assistant", respuesta)
