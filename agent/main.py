@@ -36,6 +36,7 @@ from agent.memory import (
 from agent.reports import generar_reporte_diario_preview  # noqa: F401
 from agent.conocimiento import buscar_cliente_por_texto
 from agent.providers import obtener_proveedor
+from agent.providers.zapi import es_intervencion_humana, extraer_numero_conversacion
 from agent.tools import notificar_grupo_solicitud
 
 load_dotenv()
@@ -243,6 +244,21 @@ async def _enviar_registrando(telefono: str, mensaje: str) -> str | None:
     return msg_id
 
 
+async def silenciar_conversacion(numero: str, horas: int = 6, motivo: str = ""):
+    """Marca silencio en Postgres, cancela tareas pendientes y limpia estado de conversación."""
+    await marcar_intervencion_humana(numero)
+    limpiar_estado_conversacion(numero)
+    tarea = tareas_pendientes.pop(numero, None)
+    if tarea and not tarea.done():
+        tarea.cancel()
+    mensajes_pendientes.pop(numero, None)
+    silencio_hasta = (datetime.utcnow() + timedelta(hours=horas)).strftime("%Y-%m-%d %H:%M UTC")
+    logger.warning(
+        f"INTERVENCIÓN HUMANA DETECTADA — silencio {horas}hs para {numero} "
+        f"| hasta: {silencio_hasta} | motivo: {motivo}"
+    )
+
+
 async def procesar_mensaje_cliente(telefono: str, texto: str):
     """Procesa un mensaje de cliente y genera respuesta de Olivia."""
     import asyncio
@@ -371,6 +387,15 @@ async def webhook_handler(request: Request):
     Procesa el mensaje, genera respuesta con Claude y la envía de vuelta.
     """
     try:
+        # ── Early return: detectar intervención humana en el payload crudo ──
+        # Se hace ANTES de parsear para no depender del tipo de webhook de Z-API.
+        payload = await request.json()
+        if es_intervencion_humana(payload) and not payload.get("fromApi") and not payload.get("isGroup"):
+            numero = extraer_numero_conversacion(payload)
+            if numero:
+                await silenciar_conversacion(numero, horas=6, motivo="intervencion_humana")
+                return {"ok": True, "silenciado": True}
+
         mensajes = await proveedor.parsear_webhook(request)
 
         for msg in mensajes:
@@ -381,22 +406,16 @@ async def webhook_handler(request: Request):
                 f"| messageId: {getattr(msg, 'message_id', '')}"
             )
 
-            # Mensajes propios (fromMe=True): silenciar solo si fue un humano, no el bot
+            # Fallback: mensajes propios que llegaron a parsear (bot o grupo)
             if msg.es_propio:
-                telefono_norm_p = msg.telefono.replace("-group", "").replace("@g.us", "")
-                grupo_norm_p = GRUPO_INTERNO.replace("-group", "").replace("@g.us", "")
-                es_grupo_p = telefono_norm_p == grupo_norm_p and bool(grupo_norm_p)
-                if not es_grupo_p and msg.telefono:
-                    es_del_bot = bool(msg.from_api or (msg.message_id and msg.message_id in mensajes_enviados_por_bot))
+                if not msg.from_api:
+                    es_del_bot = bool(msg.message_id and msg.message_id in mensajes_enviados_por_bot)
                     if not es_del_bot:
-                        await marcar_intervencion_humana(msg.telefono)
-                        limpiar_estado_conversacion(msg.telefono)
-                        silencio_hasta = (datetime.utcnow() + timedelta(hours=6)).strftime("%Y-%m-%d %H:%M UTC")
-                        logger.info(f"INTERVENCIÓN HUMANA DETECTADA | {msg.telefono} | silencio_hasta: {silencio_hasta}")
-                        tarea_p = tareas_pendientes.pop(msg.telefono, None)
-                        if tarea_p and not tarea_p.done():
-                            tarea_p.cancel()
-                        mensajes_pendientes.pop(msg.telefono, None)
+                        telefono_norm_p = msg.telefono.replace("-group", "").replace("@g.us", "")
+                        grupo_norm_p = GRUPO_INTERNO.replace("-group", "").replace("@g.us", "")
+                        es_grupo_p = telefono_norm_p == grupo_norm_p and bool(grupo_norm_p)
+                        if not es_grupo_p:
+                            await silenciar_conversacion(msg.telefono, horas=6, motivo="intervencion_humana_fallback")
                 continue
 
             if not msg.texto:

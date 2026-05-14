@@ -24,6 +24,11 @@ def es_intervencion_humana(payload: dict) -> bool:
     return False
 
 
+def extraer_numero_conversacion(payload: dict) -> str:
+    """Extrae el número de teléfono de la conversación del payload de Z-API."""
+    return payload.get("phone", "") or payload.get("chatId", "")
+
+
 class ProveedorZapi(ProveedorWhatsApp):
     """Proveedor de WhatsApp usando Z-API."""
 
