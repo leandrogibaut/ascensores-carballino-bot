@@ -244,6 +244,11 @@ async def _enviar_registrando(telefono: str, mensaje: str) -> str | None:
     return msg_id
 
 
+async def conversacion_silenciada(numero: str) -> bool:
+    """Retorna True si la conversación está silenciada por intervención humana reciente."""
+    return await hay_intervencion_reciente(numero)
+
+
 async def silenciar_conversacion(numero: str, horas: int = 6, motivo: str = ""):
     """Marca silencio en Postgres, cancela tareas pendientes y limpia estado de conversación."""
     await marcar_intervencion_humana(numero)
@@ -299,7 +304,7 @@ async def procesar_mensaje_cliente(telefono: str, texto: str):
 
     respuesta = asegurar_aviso_emergencia(respuesta)
 
-    if await hay_intervencion_reciente(telefono):
+    if await conversacion_silenciada(telefono):
         logger.info(f"NO RESPONDE: conversación silenciada (detectada antes de enviar) | {telefono}")
         return
 
@@ -319,7 +324,7 @@ async def procesar_acumulados(telefono: str):
     texto_combinado = "\n".join(textos)
     logger.info(f"Procesando {len(textos)} mensaje(s) de {telefono}: {texto_combinado}")
 
-    if await hay_intervencion_reciente(telefono):
+    if await conversacion_silenciada(telefono):
         logger.info(f"NO RESPONDE: conversación silenciada | {telefono}")
         return
 
@@ -506,7 +511,7 @@ async def webhook_handler(request: Request):
             telefono_norm_iv = msg.telefono.replace("-group", "").replace("@g.us", "")
             grupo_norm_iv = GRUPO_INTERNO.replace("-group", "").replace("@g.us", "")
             if not (telefono_norm_iv == grupo_norm_iv and grupo_norm_iv):
-                if await hay_intervencion_reciente(msg.telefono):
+                if await conversacion_silenciada(msg.telefono):
                     logger.info(f"NO RESPONDE: conversación silenciada | {msg.telefono}")
                     continue
 
