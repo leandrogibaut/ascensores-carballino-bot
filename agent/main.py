@@ -236,6 +236,9 @@ async def iniciar_servicios():
 
 async def _enviar_registrando(telefono: str, mensaje: str) -> str | None:
     """Envía un mensaje y registra su messageId para detectar intervenciones humanas futuras."""
+    if await conversacion_silenciada(telefono):
+        logger.info(f"CANCELA ENVÍO: conversación silenciada antes de enviar | {telefono}")
+        return None
     msg_id = await proveedor.enviar_mensaje(telefono, mensaje)
     if msg_id:
         mensajes_enviados_por_bot.add(msg_id)
