@@ -47,6 +47,25 @@ class ProveedorZapi(ProveedorWhatsApp):
             logger.debug("Webhook REVOKE ignorado")
             return []
 
+        # ── PRIORIDAD CRÍTICA: detectar intervención humana ANTES del filtro de tipo ──
+        # fromMe=true + fromApi=false = humano escribió manualmente desde el teléfono.
+        # Z-API puede enviar esto con type=SentCallback u otro tipo que el filtro descartaría.
+        if body.get("fromMe") and not body.get("fromApi") and body.get("phone"):
+            telefono_humano = body.get("phone", "")
+            logger.info(
+                f"Z-API fromMe=true fromApi=false — intervención humana en {telefono_humano} "
+                f"| type: {body.get('type', '?')} | messageId: {body.get('messageId', '')}"
+            )
+            return [MensajeEntrante(
+                telefono=telefono_humano,
+                texto="",
+                mensaje_id=body.get("messageId", ""),
+                es_propio=True,
+                message_id=body.get("messageId"),
+                nombre_remitente=body.get("senderName", ""),
+                from_api=False,
+            )]
+
         # Z-API envía un objeto por webhook, no una lista
         tipo = body.get("type", "")
 

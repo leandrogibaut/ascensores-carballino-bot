@@ -387,7 +387,7 @@ async def webhook_handler(request: Request):
                 grupo_norm_p = GRUPO_INTERNO.replace("-group", "").replace("@g.us", "")
                 es_grupo_p = telefono_norm_p == grupo_norm_p and bool(grupo_norm_p)
                 if not es_grupo_p and msg.telefono:
-                    es_del_bot = bool(msg.message_id and msg.message_id in mensajes_enviados_por_bot)
+                    es_del_bot = bool(msg.from_api or (msg.message_id and msg.message_id in mensajes_enviados_por_bot))
                     if not es_del_bot:
                         await marcar_intervencion_humana(msg.telefono)
                         limpiar_estado_conversacion(msg.telefono)
