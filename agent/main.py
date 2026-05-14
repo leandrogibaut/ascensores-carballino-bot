@@ -12,7 +12,7 @@ import json
 import asyncio
 import logging
 from contextlib import asynccontextmanager
-from datetime import datetime, date
+from datetime import datetime, date, timedelta
 from zoneinfo import ZoneInfo
 from fastapi import FastAPI, Request, HTTPException
 from fastapi.responses import PlainTextResponse
@@ -283,6 +283,10 @@ async def procesar_mensaje_cliente(telefono: str, texto: str):
 
     respuesta = asegurar_aviso_emergencia(respuesta)
 
+    if await hay_intervencion_reciente(telefono):
+        logger.info(f"NO RESPONDE: conversación silenciada (detectada antes de enviar) | {telefono}")
+        return
+
     await guardar_mensaje(telefono, "user", texto)
     await guardar_mensaje(telefono, "assistant", respuesta)
     await _enviar_registrando(telefono, respuesta)
@@ -300,7 +304,7 @@ async def procesar_acumulados(telefono: str):
     logger.info(f"Procesando {len(textos)} mensaje(s) de {telefono}: {texto_combinado}")
 
     if await hay_intervencion_reciente(telefono):
-        logger.info(f"{telefono} silenciado por intervención humana")
+        logger.info(f"NO RESPONDE: conversación silenciada | {telefono}")
         return
 
     if obtener_estado_conversacion(telefono) == "pendiente_admin":
@@ -370,6 +374,13 @@ async def webhook_handler(request: Request):
         mensajes = await proveedor.parsear_webhook(request)
 
         for msg in mensajes:
+            logger.info(
+                f"WEBHOOK | de: {msg.telefono} | fromMe: {msg.es_propio} "
+                f"| fromApi: {getattr(msg, 'from_api', False)} "
+                f"| senderName: {getattr(msg, 'nombre_remitente', '')} "
+                f"| messageId: {getattr(msg, 'message_id', '')}"
+            )
+
             # Mensajes propios (fromMe=True): silenciar solo si fue un humano, no el bot
             if msg.es_propio:
                 telefono_norm_p = msg.telefono.replace("-group", "").replace("@g.us", "")
@@ -380,7 +391,8 @@ async def webhook_handler(request: Request):
                     if not es_del_bot:
                         await marcar_intervencion_humana(msg.telefono)
                         limpiar_estado_conversacion(msg.telefono)
-                        logger.info(f"Intervención humana en {msg.telefono} — bot silenciado 6hs")
+                        silencio_hasta = (datetime.utcnow() + timedelta(hours=6)).strftime("%Y-%m-%d %H:%M UTC")
+                        logger.info(f"INTERVENCIÓN HUMANA DETECTADA | {msg.telefono} | silencio_hasta: {silencio_hasta}")
                         tarea_p = tareas_pendientes.pop(msg.telefono, None)
                         if tarea_p and not tarea_p.done():
                             tarea_p.cancel()
@@ -476,7 +488,7 @@ async def webhook_handler(request: Request):
             grupo_norm_iv = GRUPO_INTERNO.replace("-group", "").replace("@g.us", "")
             if not (telefono_norm_iv == grupo_norm_iv and grupo_norm_iv):
                 if await hay_intervencion_reciente(msg.telefono):
-                    logger.info(f"Mensaje de {msg.telefono} ignorado: intervención humana reciente")
+                    logger.info(f"NO RESPONDE: conversación silenciada | {msg.telefono}")
                     continue
 
             # Si el cliente cita un mensaje no enviado por Olivia → intervención humana manual
@@ -484,11 +496,12 @@ async def webhook_handler(request: Request):
             if msg.reference_message_id and msg.reference_message_id not in mensajes_enviados_por_bot:
                 await marcar_intervencion_humana(msg.telefono)
                 limpiar_estado_conversacion(msg.telefono)
+                silencio_hasta_cita = (datetime.utcnow() + timedelta(hours=6)).strftime("%Y-%m-%d %H:%M UTC")
+                logger.info(f"INTERVENCIÓN HUMANA DETECTADA (cita mensaje humano) | {msg.telefono} | silencio_hasta: {silencio_hasta_cita}")
                 tarea_ref = tareas_pendientes.pop(msg.telefono, None)
                 if tarea_ref and not tarea_ref.done():
                     tarea_ref.cancel()
                 mensajes_pendientes.pop(msg.telefono, None)
-                logger.info(f"Cliente {msg.telefono} respondió citando mensaje humano/manual; Olivia queda silenciada")
                 continue
 
             # Deduplicar por message_id (protege contra webhooks duplicados de Z-API)
