@@ -11,6 +11,19 @@ from agent.providers.base import ProveedorWhatsApp, MensajeEntrante
 logger = logging.getLogger("agentkit")
 
 
+def es_intervencion_humana(payload: dict) -> bool:
+    """
+    Detecta mensajes enviados manualmente desde WhatsApp/Z-API.
+    Cubre casos donde fromMe puede estar en la raíz o anidado en message{}.
+    """
+    if payload.get("fromMe") is True:
+        return True
+    message = payload.get("message") or {}
+    if message.get("fromMe") is True:
+        return True
+    return False
+
+
 class ProveedorZapi(ProveedorWhatsApp):
     """Proveedor de WhatsApp usando Z-API."""
 
@@ -48,13 +61,15 @@ class ProveedorZapi(ProveedorWhatsApp):
             return []
 
         # ── PRIORIDAD CRÍTICA: detectar intervención humana ANTES del filtro de tipo ──
-        # fromMe=true + fromApi=false = humano escribió manualmente desde el teléfono.
-        # Z-API puede enviar esto con type=SentCallback u otro tipo que el filtro descartaría.
-        if body.get("fromMe") and not body.get("fromApi") and body.get("phone"):
+        # Z-API puede enviar mensajes salientes manuales con type=SentCallback u otro
+        # tipo que el filtro descartaría. Se intercepta aquí para no perderlos.
+        if es_intervencion_humana(body) and body.get("phone"):
             telefono_humano = body.get("phone", "")
+            from_api_val = body.get("fromApi", False)
             logger.info(
-                f"Z-API fromMe=true fromApi=false — intervención humana en {telefono_humano} "
-                f"| type: {body.get('type', '?')} | messageId: {body.get('messageId', '')}"
+                f"Z-API fromMe=true — mensaje propio en {telefono_humano} "
+                f"| fromApi: {from_api_val} | type: {body.get('type', '?')} "
+                f"| messageId: {body.get('messageId', '')}"
             )
             return [MensajeEntrante(
                 telefono=telefono_humano,
@@ -63,7 +78,7 @@ class ProveedorZapi(ProveedorWhatsApp):
                 es_propio=True,
                 message_id=body.get("messageId"),
                 nombre_remitente=body.get("senderName", ""),
-                from_api=False,
+                from_api=from_api_val,
             )]
 
         # Z-API envía un objeto por webhook, no una lista
