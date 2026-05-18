@@ -3,7 +3,7 @@
 
 """
 Lógica de IA del agente. Lee el system prompt de prompts.yaml
-y genera respuestas usando la API de Ollama (formato compatible con OpenAI).
+y genera respuestas usando Ollama con interfaz compatible OpenAI.
 """
 
 import os
@@ -102,51 +102,3 @@ async def generar_respuesta(mensaje: str, historial: list[dict]) -> str:
         logger.error(f"Error Ollama API: {e}")
         return obtener_mensaje_error()
 
-
-_SYSTEM_CLASIFICADOR = """\
-Sos un clasificador de mensajes para Ascensores Carballino, empresa argentina de mantenimiento y reparación de ascensores.
-
-Analizá el último mensaje del cliente (y el historial si lo hay) y devolvé UNA SOLA PALABRA según la intención principal:
-
-reclamo     → El cliente reporta un problema técnico: ascensor parado, no funciona, hace ruido, está desnivelado,
-              la puerta no cierra/abre, hay alguien encerrado, pide que manden un técnico, urgencia o emergencia.
-
-administracion → El cliente consulta sobre presupuesto, precio, contrato, factura, pago, cuota, deuda,
-                 instalación de ascensor nuevo, habilitación, certificación, información comercial.
-
-desconocido → Saludo solo ("hola", "buenos días"), mensaje confuso, el cliente pide hablar con una persona,
-              o no se puede determinar la intención con certeza.
-
-Reglas importantes:
-- Si el mensaje menciona el ascensor sin indicar claramente si es falla o consulta comercial → desconocido
-- Si hay historial previo que aclara la intención, usalo
-- Ante la duda, preferí desconocido antes que clasificar mal
-- Respondé SOLO la palabra, sin puntuación, mayúsculas ni explicación\
-"""
-
-
-async def clasificar_intencion(texto: str, historial: list[dict] | None = None) -> str:
-    """Clasifica la intención del mensaje usando el LLM con contexto del negocio."""
-    mensajes_api: list[dict] = []
-
-    # Incluir hasta los últimos 4 turnos de historial para dar contexto
-    if historial:
-        for m in historial[-4:]:
-            mensajes_api.append({"role": m["role"], "content": m["content"]})
-
-    mensajes_api.append({"role": "user", "content": texto})
-
-    try:
-        response = await client.chat.completions.create(
-            model=MODELO_CHAT,
-            max_tokens=10,
-            messages=[{"role": "system", "content": _SYSTEM_CLASIFICADOR}] + mensajes_api,
-        )
-        raw = response.choices[0].message.content.strip().lower().split()[0]
-        resultado = raw if raw in ("reclamo", "administracion", "desconocido") else "desconocido"
-    except Exception as e:
-        logger.error(f"Error clasificando intención: {e}")
-        resultado = "desconocido"
-
-    logger.info(f"clasificar_intencion: '{resultado}' — texto: {texto!r}")
-    return resultado

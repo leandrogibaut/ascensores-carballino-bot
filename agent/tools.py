@@ -9,7 +9,6 @@ Permiten al agente gestionar solicitudes de servicio y mantenimiento.
 import os
 import yaml
 import logging
-from datetime import datetime
 
 logger = logging.getLogger("agentkit")
 
@@ -35,53 +34,6 @@ def obtener_contactos() -> dict:
         "horario_oficina": negocio.get("horario_oficina", "Lunes a Viernes 8:00 a 18:00hs"),
         "horario_emergencias": negocio.get("horario_emergencias", "Lunes a Viernes después de las 18hs, Sábados, Domingos y Feriados las 24hs"),
     }
-
-
-def registrar_solicitud_servicio(
-    consorcio: str,
-    direccion: str,
-    contacto: str,
-    telefono_contacto: str,
-    descripcion: str,
-    urgencia: str = "rutinario"
-) -> dict:
-    """
-    Registra una solicitud de servicio en un archivo de log.
-    En producción, esto se conectaría a un CRM o sistema de tickets.
-
-    Args:
-        consorcio: Nombre del consorcio, hotel o empresa
-        direccion: Dirección completa del edificio
-        contacto: Nombre y cargo de la persona de contacto
-        telefono_contacto: Teléfono de la persona de contacto
-        descripcion: Descripción del servicio requerido
-        urgencia: "rutinario", "urgente" o "emergencia"
-
-    Returns:
-        Diccionario con el número de solicitud y confirmación
-    """
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    numero_solicitud = f"SOL-{timestamp}"
-
-    solicitud = {
-        "numero": numero_solicitud,
-        "fecha": datetime.now().strftime("%d/%m/%Y %H:%M"),
-        "consorcio": consorcio,
-        "direccion": direccion,
-        "contacto": contacto,
-        "telefono_contacto": telefono_contacto,
-        "descripcion": descripcion,
-        "urgencia": urgencia,
-        "estado": "pendiente",
-    }
-
-    # Guardar en archivo de log de solicitudes
-    os.makedirs("data", exist_ok=True)
-    with open("data/solicitudes.log", "a", encoding="utf-8") as f:
-        f.write(f"{solicitud}\n")
-
-    logger.info(f"Nueva solicitud registrada: {numero_solicitud} — {consorcio} — {urgencia}")
-    return solicitud
 
 
 async def notificar_grupo_solicitud(telefono_cliente: str, resumen: str, proveedor=None, solicitud_id: int = 0) -> bool:
