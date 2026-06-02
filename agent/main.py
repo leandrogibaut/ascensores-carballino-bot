@@ -36,7 +36,7 @@ from agent.memory import (
 from agent.reports import generar_reporte_diario_preview  # noqa: F401
 from agent.conocimiento import buscar_cliente_por_texto
 from agent.providers import obtener_proveedor
-from agent.providers.zapi import es_intervencion_humana, extraer_numero_conversacion
+from agent.providers.zapi import es_intervencion_humana, extraer_numero_conversacion, normalizar_numero_whatsapp
 from agent.tools import notificar_grupo_solicitud
 
 load_dotenv()
@@ -71,6 +71,43 @@ def asegurar_aviso_emergencia(texto: str) -> str:
     if "4301-3967" in texto or "1565024510" in texto:
         return texto
     return texto.strip() + AVISO_EMERGENCIA
+
+
+_CIERRES: frozenset[str] = frozenset({
+    "ok", "okey", "oki", "okie", "dale", "va", "va bien",
+    "gracias", "muchas gracias", "mil gracias", "grax",
+    "perfecto", "listo", "bárbaro", "barbaro",
+    "genial", "excelente", "buenísimo", "buenisimo",
+    "te agradezco", "te agradezco mucho",
+    "de nada", "no hay de qué", "no hay de que",
+    "joya", "entendido", "entendí", "entendi",
+    "copado", "bien", "muy bien", "todo bien",
+    "👍", "🙏",
+})
+
+_PALABRAS_NUEVA_INFO: list[str] = [
+    "ascensor", "elevador", "falla", "problema", "roto", "no funciona",
+    "dirección", "direccion", "piso", "depto", "edificio",
+    "factura", "pago", "contrato", "presupuesto", "abono",
+    "urgente", "emergencia", "atrapado", "encerrado",
+]
+
+
+def es_cierre_conversacion(texto: str) -> bool:
+    """Retorna True si el mensaje es solo un cierre o agradecimiento sin información nueva."""
+    if "?" in texto:
+        return False
+    texto_lower = texto.strip().lower()
+    for palabra in _PALABRAS_NUEVA_INFO:
+        if palabra in texto_lower:
+            return False
+    lineas = [l.strip() for l in texto_lower.split("\n") if l.strip()]
+    if not lineas:
+        return False
+    return all(
+        re.sub(r"[¡!¿.,;:'\"]+", "", linea).strip() in _CIERRES
+        for linea in lineas
+    )
 
 
 def formatear_resumen_solicitud(datos_raw: str) -> tuple[str, dict]:
@@ -237,7 +274,7 @@ async def iniciar_servicios():
 async def _enviar_registrando(telefono: str, mensaje: str) -> str | None:
     """Envía un mensaje y registra su messageId para detectar intervenciones humanas futuras."""
     if await conversacion_silenciada(telefono):
-        logger.info(f"CANCELA ENVÍO: conversación silenciada antes de enviar | {telefono}")
+        logger.info(f"CANCELA ENVÍO: conversación silenciada | {normalizar_numero_whatsapp(telefono)}")
         return None
     msg_id = await proveedor.enviar_mensaje(telefono, mensaje)
     if msg_id:
@@ -249,22 +286,27 @@ async def _enviar_registrando(telefono: str, mensaje: str) -> str | None:
 
 async def conversacion_silenciada(numero: str) -> bool:
     """Retorna True si la conversación está silenciada por intervención humana reciente."""
-    return await hay_intervencion_reciente(numero)
+    numero_norm = normalizar_numero_whatsapp(numero)
+    logger.debug(f"SILENCIO CONSULTADO PARA: {numero_norm}")
+    return await hay_intervencion_reciente(numero_norm)
 
 
 async def silenciar_conversacion(numero: str, horas: int = 6, motivo: str = ""):
     """Marca silencio en Postgres, cancela tareas pendientes y limpia estado de conversación."""
-    await marcar_intervencion_humana(numero)
-    limpiar_estado_conversacion(numero)
-    tarea = tareas_pendientes.pop(numero, None)
+    original = numero
+    numero_norm = normalizar_numero_whatsapp(numero)
+    logger.warning(f"INTERVENCIÓN HUMANA DETECTADA | motivo: {motivo}")
+    logger.info(f"NÚMERO ORIGINAL: {original}")
+    logger.info(f"NÚMERO NORMALIZADO: {numero_norm}")
+    await marcar_intervencion_humana(numero_norm)
+    logger.info(f"SILENCIO GUARDADO PARA: {numero_norm}")
+    limpiar_estado_conversacion(original)
+    tarea = tareas_pendientes.pop(original, None)
     if tarea and not tarea.done():
         tarea.cancel()
-    mensajes_pendientes.pop(numero, None)
+    mensajes_pendientes.pop(original, None)
     silencio_hasta = (datetime.utcnow() + timedelta(hours=horas)).strftime("%Y-%m-%d %H:%M UTC")
-    logger.warning(
-        f"INTERVENCIÓN HUMANA DETECTADA — silencio {horas}hs para {numero} "
-        f"| hasta: {silencio_hasta} | motivo: {motivo}"
-    )
+    logger.warning(f"Silencio {horas}hs para {numero_norm} | hasta: {silencio_hasta} | motivo: {motivo}")
 
 
 async def procesar_mensaje_cliente(telefono: str, texto: str):
@@ -291,7 +333,13 @@ async def procesar_mensaje_cliente(telefono: str, texto: str):
                 "quien_abre": extraido.get("quien_abre", ""),
                 "piso_depto": extraido.get("piso_depto", ""),
             })
-            await notificar_grupo_solicitud(telefono, resumen_texto, proveedor, solicitud_id)
+            resultado_grupo = await notificar_grupo_solicitud(telefono, resumen_texto, proveedor, solicitud_id)
+            if resultado_grupo:
+                logger.info(f"RECLAMO DERIVADO A GRUPO | solicitud #{solicitud_id} | {telefono}")
+                logger.info(f"SILENCIO POR RECLAMO DERIVADO | {telefono}")
+                await silenciar_conversacion(telefono, horas=6, motivo="reclamo_derivado_grupo")
+            else:
+                logger.error(f"ERROR ENVÍO GRUPO — notificación falló para solicitud #{solicitud_id}")
         respuesta = re.sub(r'\[SOLICITUD_COMPLETA:.+?\]', '', respuesta, flags=re.DOTALL).strip()
         if not respuesta:
             respuesta = "Perfecto, ya registramos el reclamo y lo derivamos al equipo técnico. Muchas gracias."
@@ -333,6 +381,10 @@ async def procesar_acumulados(telefono: str):
 
     if obtener_estado_conversacion(telefono) == "pendiente_admin":
         logger.info(f"{telefono} en pendiente_admin — esperando intervención humana")
+        return
+
+    if es_cierre_conversacion(texto_combinado):
+        logger.info(f"CIERRE DETECTADO: no se responde | {telefono} | '{texto_combinado}'")
         return
 
     await procesar_mensaje_cliente(telefono, texto_combinado)
@@ -452,6 +504,12 @@ async def webhook_handler(request: Request):
                     bot_activo = True
                     await _enviar_registrando(msg.telefono, "▶️ Bot activado. Olivia vuelve a responder automáticamente.")
                     continue
+                elif msg.texto.strip().lower().startswith("/silencio "):
+                    numero_raw = msg.texto.strip().split(" ", 1)[1].strip()
+                    numero_norm = normalizar_numero_whatsapp(numero_raw)
+                    await silenciar_conversacion(numero_norm, horas=6, motivo="comando_manual")
+                    await _enviar_registrando(msg.telefono, f"Listo, silencio activado por 6 horas para {numero_norm}.")
+                    continue
 
             # ── Si el bot está pausado, ignorar mensajes ──
             if not bot_activo:
@@ -501,6 +559,14 @@ async def webhook_handler(request: Request):
                     logger.warning(f"Mensaje técnico sin solicitud coincidente: {msg.texto}")
                 continue
 
+            # ── Respuesta automática a audio sin transcripción ──
+            if msg.texto == "__audio_sin_transcripcion__":
+                await _enviar_registrando(
+                    msg.telefono,
+                    "No pude escuchar bien el audio. ¿Me lo podés mandar por escrito?"
+                )
+                continue
+
             # ── Respuesta automática a intentos de llamada ──
             if msg.texto == "__llamada_whatsapp__":
                 aviso = (
@@ -521,14 +587,7 @@ async def webhook_handler(request: Request):
             # Si el cliente cita un mensaje no enviado por Olivia → intervención humana manual
             # (Z-API no envía webhook del mensaje humano, pero sí del reply del cliente)
             if msg.reference_message_id and msg.reference_message_id not in mensajes_enviados_por_bot:
-                await marcar_intervencion_humana(msg.telefono)
-                limpiar_estado_conversacion(msg.telefono)
-                silencio_hasta_cita = (datetime.utcnow() + timedelta(hours=6)).strftime("%Y-%m-%d %H:%M UTC")
-                logger.info(f"INTERVENCIÓN HUMANA DETECTADA (cita mensaje humano) | {msg.telefono} | silencio_hasta: {silencio_hasta_cita}")
-                tarea_ref = tareas_pendientes.pop(msg.telefono, None)
-                if tarea_ref and not tarea_ref.done():
-                    tarea_ref.cancel()
-                mensajes_pendientes.pop(msg.telefono, None)
+                await silenciar_conversacion(msg.telefono, horas=6, motivo="intervencion_humana_reference")
                 continue
 
             # Deduplicar por message_id (protege contra webhooks duplicados de Z-API)

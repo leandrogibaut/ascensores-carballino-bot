@@ -24,9 +24,21 @@ def es_intervencion_humana(payload: dict) -> bool:
     return False
 
 
+def normalizar_numero_whatsapp(valor: str) -> str:
+    """Convierte cualquier formato de ID de WhatsApp a número limpio. No modifica grupos."""
+    if not valor:
+        return valor
+    if "-group" in valor or "@g.us" in valor:
+        return valor
+    for sufijo in ("@s.whatsapp.net", "@c.us", "@lid"):
+        valor = valor.replace(sufijo, "")
+    return valor.lstrip("+").strip()
+
+
 def extraer_numero_conversacion(payload: dict) -> str:
-    """Extrae el número de teléfono de la conversación del payload de Z-API."""
-    return payload.get("phone", "") or payload.get("chatId", "")
+    """Extrae y normaliza el número de teléfono de la conversación del payload de Z-API."""
+    valor = payload.get("phone", "") or payload.get("chatId", "")
+    return normalizar_numero_whatsapp(valor)
 
 
 class ProveedorZapi(ProveedorWhatsApp):
@@ -128,15 +140,20 @@ class ProveedorZapi(ProveedorWhatsApp):
             texto = body["video"].get("caption", "")
         elif "document" in body:
             texto = body["document"].get("caption", "")
-        elif subtipo in ("audio", "ptt"):
+        elif "audio" in body:
             audio_url = body.get("audio", {}).get("audioUrl", "")
+            logger.info(f"AUDIO DETECTADO | {telefono} | subtype: {subtipo}")
+            logger.info(f"URL AUDIO: {audio_url}")
             if audio_url:
                 texto = await self._transcribir_audio_url(audio_url)
                 if texto:
-                    logger.info(f"Audio transcripto de {telefono}: {texto}")
+                    logger.info(f"TRANSCRIPCIÓN AUDIO | {telefono}: {texto}")
                 else:
-                    logger.warning(f"Transcripción de audio fallida o vacía para {telefono} — mensaje descartado")
-            # Sin transcripción: texto queda vacío → se descarta en el check de abajo
+                    logger.warning(f"ERROR TRANSCRIPCIÓN AUDIO | {telefono} — audioUrl presente pero transcripción vacía")
+                    texto = "__audio_sin_transcripcion__"
+            else:
+                logger.warning(f"ERROR TRANSCRIPCIÓN AUDIO | {telefono} — audioUrl vacía o ausente")
+                texto = "__audio_sin_transcripcion__"
         elif notificacion == "CALL_VOICE":
             # Llamada en curso — ignorar, ya respondemos en CALL_MISSED_VOICE
             return []
