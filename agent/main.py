@@ -10,6 +10,7 @@ import os
 import re
 import json
 import asyncio
+import unicodedata
 import logging
 from contextlib import asynccontextmanager
 from datetime import datetime, date, timedelta
@@ -108,6 +109,31 @@ def es_cierre_conversacion(texto: str) -> bool:
         re.sub(r"[¡!¿.,;:'\"]+", "", linea).strip() in _CIERRES
         for linea in lineas
     )
+
+
+def _normalizar_texto_dedup(texto: str) -> str:
+    """Normaliza texto para deduplicación: sin tildes, minúsculas, sin puntuación, sin espacios extra."""
+    texto = unicodedata.normalize("NFKD", texto)
+    texto = "".join(c for c in texto if not unicodedata.combining(c))
+    texto = texto.lower()
+    texto = re.sub(r"[^\w\s]", "", texto)
+    return re.sub(r"\s+", " ", texto).strip()
+
+
+def _ya_procesado_por_contenido(telefono: str, texto: str, ventana_seg: int = 120) -> bool:
+    """Retorna True si el mismo número mandó el mismo texto dentro de la ventana de tiempo."""
+    telefono_norm = normalizar_numero_whatsapp(telefono)
+    texto_norm = _normalizar_texto_dedup(texto)
+    clave = (telefono_norm, texto_norm)
+    ahora = datetime.utcnow()
+    ultimo = _contenidos_procesados.get(clave)
+    if ultimo and (ahora - ultimo).total_seconds() < ventana_seg:
+        logger.info(f"DUPLICADO POR CONTENIDO: no se responde | {telefono_norm} | '{texto[:60]}'")
+        return True
+    _contenidos_procesados[clave] = ahora
+    if len(_contenidos_procesados) > _MAX_CONTENIDOS_PROCESADOS:
+        _contenidos_procesados.clear()
+    return False
 
 
 def formatear_resumen_solicitud(datos_raw: str) -> tuple[str, dict]:
@@ -239,6 +265,8 @@ tareas_pendientes: dict[str, "asyncio.Task"] = {}
 _MAX_IDS_PROCESADOS = 5000
 mensajes_webhook_procesados: set[str] = set()
 mensajes_enviados_por_bot: set[str] = set()
+_contenidos_procesados: dict[tuple, datetime] = {}
+_MAX_CONTENIDOS_PROCESADOS = 2000
 
 conversaciones_estado: dict[str, dict] = {}
 
@@ -598,6 +626,10 @@ async def webhook_handler(request: Request):
                 mensajes_webhook_procesados.add(msg.message_id)
                 if len(mensajes_webhook_procesados) > _MAX_IDS_PROCESADOS:
                     mensajes_webhook_procesados.clear()
+
+            # Deduplicar por contenido (Z-API puede reenviar mismo texto con distinto messageId)
+            if _ya_procesado_por_contenido(msg.telefono, msg.texto):
+                continue
 
             logger.info(f"Mensaje de {msg.telefono}: {msg.texto}")
 
