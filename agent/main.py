@@ -222,33 +222,33 @@ def analizar_mensaje_tecnico(texto: str) -> tuple[str, str]:
 
 
 async def enviar_resumen_diario():
-    """Envía a las 20:00hs un JSON con los mensajes del grupo del día al número configurado."""
+    """Envía a las 20:00hs un resumen legible de los mensajes del grupo al número configurado."""
     try:
         tz = ZoneInfo("America/Argentina/Buenos_Aires")
         hoy = datetime.now(tz).date()
+        fecha_str = hoy.strftime("%d/%m/%Y")
 
         mensajes = await obtener_mensajes_grupo_por_fecha(hoy)
 
-        payload = {
-            "source": "Reclamos Ascensores Carballino",
-            "date": hoy.isoformat(),
-            "timezone": "America/Argentina/Buenos_Aires",
-            "messages": [
-                {
-                    "time": m.timestamp.replace(tzinfo=ZoneInfo("UTC")).astimezone(tz).strftime("%H:%M"),
-                    "sender": m.nombre_remitente or "",
-                    "phone": m.telefono_remitente or "",
-                    "text": m.texto or "",
-                    "message_id": m.mensaje_id or "",
-                    "reference_message_id": m.reference_message_id or "",
-                    "quoted_text": m.texto_citado or "",
-                }
-                for m in mensajes
-            ],
-        }
+        if not mensajes:
+            texto = (
+                f"Resumen de reclamos del {fecha_str}\n\n"
+                f"No se registraron mensajes en el grupo Reclamos Ascensores Carballino."
+            )
+        else:
+            lineas = [f"Resumen de reclamos del {fecha_str}", ""]
+            for i, m in enumerate(mensajes, 1):
+                hora = m.timestamp.replace(tzinfo=ZoneInfo("UTC")).astimezone(tz).strftime("%H:%M")
+                remitente = m.nombre_remitente or m.telefono_remitente or "Desconocido"
+                texto_msg = (m.texto or "").strip()
+                lineas.append(f"{i}. {hora} - {remitente}")
+                if texto_msg:
+                    lineas.append(f"{texto_msg}")
+            lineas.append("")
+            lineas.append(f"Total de mensajes procesados: {len(mensajes)}.")
+            texto = "\n".join(lineas)
 
-        texto_json = json.dumps(payload, ensure_ascii=False)
-        resultado = await proveedor.enviar_mensaje(REPORTE_DIARIO_TELEFONO, texto_json)
+        resultado = await proveedor.enviar_mensaje(REPORTE_DIARIO_TELEFONO, texto)
         if resultado:
             logger.info(f"Reporte diario enviado a {REPORTE_DIARIO_TELEFONO} ({len(mensajes)} mensajes)")
         else:
