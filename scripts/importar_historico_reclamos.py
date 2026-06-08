@@ -47,7 +47,7 @@ def extraer_jsons(contenido: str) -> list[tuple[dict | None, str | None]]:
             obj, offset = decoder.raw_decode(contenido, idx)
             if isinstance(obj, dict) and "messages" in obj:
                 resultados.append((obj, None))
-            pos = idx + offset
+            pos = offset
         except json.JSONDecodeError as e:
             resultados.append((None, f"JSON malformado en posición {idx}: {e}"))
             pos = idx + 1
