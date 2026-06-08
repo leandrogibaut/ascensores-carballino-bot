@@ -2,6 +2,7 @@
 # Generado por AgentKit
 
 import os
+import re
 import json
 import logging
 import httpx
@@ -9,6 +10,19 @@ from fastapi import Request
 from agent.providers.base import ProveedorWhatsApp, MensajeEntrante
 
 logger = logging.getLogger("agentkit")
+
+_RE_EXTENSION = re.compile(r'\.[a-zA-Z0-9]{2,5}$')
+
+
+def _caption_util(texto: str) -> bool:
+    """Retorna True solo si el caption tiene contenido útil, no un nombre de archivo vacío o solo extensión."""
+    if not texto or not texto.strip():
+        return False
+    partes = texto.strip().split()
+    # Si tiene pocas palabras y la última termina en extensión de archivo → descartar
+    if len(partes) <= 3 and _RE_EXTENSION.search(partes[-1]):
+        return False
+    return True
 
 
 def es_intervencion_humana(payload: dict) -> bool:
@@ -134,12 +148,23 @@ class ProveedorZapi(ProveedorWhatsApp):
         elif "text" in body:
             texto = body["text"].get("message", "")
         elif "image" in body:
-            # Foto con caption — los técnicos suelen mandar fotos con descripción
-            texto = body["image"].get("caption", "")
+            caption = body["image"].get("caption", "") or ""
+            if not _caption_util(caption):
+                logger.info(f"DOCUMENTO SIN TEXTO: no se responde | {telefono} | imagen sin caption útil: {caption!r}")
+                return []
+            texto = caption
         elif "video" in body:
-            texto = body["video"].get("caption", "")
+            caption = body["video"].get("caption", "") or ""
+            if not _caption_util(caption):
+                logger.info(f"DOCUMENTO SIN TEXTO: no se responde | {telefono} | video sin caption útil: {caption!r}")
+                return []
+            texto = caption
         elif "document" in body:
-            texto = body["document"].get("caption", "")
+            caption = body["document"].get("caption", "") or ""
+            if not _caption_util(caption):
+                logger.info(f"DOCUMENTO SIN TEXTO: no se responde | {telefono} | documento sin caption útil: {caption!r}")
+                return []
+            texto = caption
         elif "audio" in body:
             audio_url = body.get("audio", {}).get("audioUrl", "")
             logger.info(f"AUDIO DETECTADO | {telefono} | subtype: {subtipo}")
