@@ -82,6 +82,8 @@ class MensajeGrupo(Base):
     texto_citado: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)
     fecha: Mapped[date] = mapped_column(Date, default=date.today)
     timestamp: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    source: Mapped[str] = mapped_column(String(200), default="")
+    raw_json: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)
 
 
 async def inicializar_db():
@@ -100,6 +102,8 @@ async def inicializar_db():
         "ALTER TABLE mensajes_grupo ADD COLUMN mensaje_id VARCHAR(100)",
         "ALTER TABLE mensajes_grupo ADD COLUMN reference_message_id VARCHAR(100)",
         "ALTER TABLE mensajes_grupo ADD COLUMN texto_citado TEXT",
+        "ALTER TABLE mensajes_grupo ADD COLUMN source VARCHAR(200) DEFAULT ''",
+        "ALTER TABLE mensajes_grupo ADD COLUMN raw_json TEXT DEFAULT NULL",
     ]:
         try:
             async with engine.begin() as conn:
