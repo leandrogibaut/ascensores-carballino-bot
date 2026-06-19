@@ -35,7 +35,7 @@ from agent.memory import (
     obtener_solicitudes_por_fecha, obtener_mensajes_grupo_por_fecha,
 )
 from agent.reports import generar_reporte_diario_preview  # noqa: F401
-from agent.conocimiento import buscar_cliente_por_texto
+from agent.conocimiento import buscar_cliente_por_texto, buscar_cliente_registrado, construir_contexto_cliente_registrado
 from agent.providers import obtener_proveedor
 from agent.providers.zapi import es_intervencion_humana, extraer_numero_conversacion, normalizar_numero_whatsapp
 from agent.tools import notificar_grupo_solicitud
@@ -341,7 +341,19 @@ async def procesar_mensaje_cliente(telefono: str, texto: str):
     """Procesa un mensaje de cliente y genera respuesta de Olivia."""
     import asyncio
     historial = await obtener_historial(telefono)
-    respuesta = await generar_respuesta(texto, historial)
+
+    tel_norm = normalizar_numero_whatsapp(telefono)
+    cliente_reg = buscar_cliente_registrado(tel_norm)
+    contexto_cliente = ""
+    if cliente_reg:
+        hora_actual = datetime.now(TZ_AR)
+        contexto_cliente = construir_contexto_cliente_registrado(cliente_reg, hora_actual)
+        logger.info(
+            f"CLIENTE REGISTRADO DETECTADO | {tel_norm} | "
+            f"{cliente_reg.get('nombre', '')} | {cliente_reg.get('direccion', '')}"
+        )
+
+    respuesta = await generar_respuesta(texto, historial, contexto_cliente=contexto_cliente)
 
     tag_match = re.search(r'\[SOLICITUD_COMPLETA:(.+?)\]', respuesta, re.DOTALL)
     if tag_match:

@@ -1,0 +1,47 @@
+# config/clientes_registrados.yaml
+# Clientes registrados por número de teléfono normalizado (549...).
+# Cuando Olivia recibe un mensaje de estos números, usa los datos precargados
+# y no pide dirección ni quién abre al cliente.
+# Pendiente sin teléfono: Carina / Montañeses 3150 Torre C
+
+clientes_registrados:
+
+  "5491139357151":
+    nombre: "Guardia Álvarez Thomas 198"
+    cliente: "La Algodonera"
+    direccion: "Álvarez Thomas 198"
+    quien_abre: "Guardia / personal del edificio"
+    horario: "8 a 19 hs"
+    guardia_24hs: false
+    preguntar_fuera_de_horario: true
+    observaciones: "Si escriben después de las 19 hs, preguntar si hay alguien para recibir al técnico antes de derivar."
+
+  "5491165909912":
+    nombre: "Guardia Santos Dumont"
+    cliente: "La Algodonera"
+    direccion: "Santos Dumont"
+    quien_abre: "Guardia"
+    horario: "24 hs"
+    guardia_24hs: true
+    preguntar_fuera_de_horario: false
+    observaciones: "No pedir quién abre ni horario, salvo que el mensaje indique algo distinto."
+
+  "5491165430140":
+    nombre: "Guardia Concepción Arenal 3425"
+    cliente: "La Algodonera"
+    direccion: "Concepción Arenal 3425"
+    quien_abre: "Guardia"
+    horario: "24 hs"
+    guardia_24hs: true
+    preguntar_fuera_de_horario: false
+    observaciones: "No pedir quién abre ni horario, salvo que el mensaje indique algo distinto."
+
+  "5491128452364":
+    nombre: "Ugarteche 3050"
+    cliente: "Ugarteche 3050"
+    direccion: "Ugarteche 3050"
+    quien_abre: "Guardia / portería"
+    horario: "24 hs"
+    guardia_24hs: true
+    preguntar_fuera_de_horario: false
+    observaciones: "Si menciona cuerpo, familia, ascensor de servicio, número de ascensor, bombas u otro equipo, incluirlo en la falla/reclamo."

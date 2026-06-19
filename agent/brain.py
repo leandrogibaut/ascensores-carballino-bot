@@ -63,7 +63,7 @@ async def _llamar_llm(client: AsyncOpenAI, model: str, system_prompt: str, mensa
     return response.choices[0].message.content
 
 
-async def generar_respuesta(mensaje: str, historial: list[dict]) -> str:
+async def generar_respuesta(mensaje: str, historial: list[dict], contexto_cliente: str = "") -> str:
     """
     Genera una respuesta usando el LLM configurado (Gemini o Ollama).
     Si LLM_PROVIDER=gemini y Gemini falla, usa Ollama como fallback.
@@ -72,6 +72,8 @@ async def generar_respuesta(mensaje: str, historial: list[dict]) -> str:
         return obtener_mensaje_fallback()
 
     system_prompt = cargar_system_prompt()
+    if contexto_cliente:
+        system_prompt = system_prompt + "\n\n" + contexto_cliente
     historial_reciente = historial[-15:] if len(historial) > 15 else historial
 
     mensajes = [{"role": msg["role"], "content": msg["content"]} for msg in historial_reciente]
