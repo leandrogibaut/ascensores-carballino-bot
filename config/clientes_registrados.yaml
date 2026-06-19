@@ -2,7 +2,7 @@
 # Clientes registrados por número de teléfono normalizado (549...).
 # Cuando Olivia recibe un mensaje de estos números, usa los datos precargados
 # y no pide dirección ni quién abre al cliente.
-# Pendiente sin teléfono: Carina / Montañeses 3150 Torre C
+# Carina / Montañeses 3150 Torre C — agregada con teléfono 1137032400
 
 clientes_registrados:
 
@@ -45,3 +45,13 @@ clientes_registrados:
     guardia_24hs: true
     preguntar_fuera_de_horario: false
     observaciones: "Si menciona cuerpo, familia, ascensor de servicio, número de ascensor, bombas u otro equipo, incluirlo en la falla/reclamo."
+
+  "5491137032400":
+    nombre: "Carina — Montañeses 3150 Torre C"
+    cliente: "Arribeños / Montañeses 3150 Torre C"
+    direccion: "Montañeses 3150 Torre C"
+    quien_abre: "Carina, intendenta"
+    horario: "24 hs"
+    guardia_24hs: true
+    preguntar_fuera_de_horario: false
+    observaciones: "Carina es la intendenta y hace reclamos por esa torre."
