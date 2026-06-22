@@ -35,7 +35,12 @@ from agent.memory import (
     obtener_solicitudes_por_fecha, obtener_mensajes_grupo_por_fecha,
 )
 from agent.reports import generar_reporte_diario_preview  # noqa: F401
-from agent.conocimiento import buscar_cliente_por_texto, buscar_cliente_registrado, construir_contexto_cliente_registrado
+from agent.conocimiento import (
+    buscar_cliente_por_texto,
+    buscar_cliente_registrado, construir_contexto_cliente_registrado,
+    buscar_contacto_csv, construir_contexto_desde_csv,
+    construir_contexto_multi_sin_match, detectar_direccion_en_mensaje,
+)
 from agent.providers import obtener_proveedor
 from agent.providers.zapi import es_intervencion_humana, extraer_numero_conversacion, normalizar_numero_whatsapp
 from agent.tools import notificar_grupo_solicitud
@@ -343,15 +348,35 @@ async def procesar_mensaje_cliente(telefono: str, texto: str):
     historial = await obtener_historial(telefono)
 
     tel_norm = normalizar_numero_whatsapp(telefono)
-    cliente_reg = buscar_cliente_registrado(tel_norm)
     contexto_cliente = ""
-    if cliente_reg:
-        hora_actual = datetime.now(TZ_AR)
-        contexto_cliente = construir_contexto_cliente_registrado(cliente_reg, hora_actual)
-        logger.info(
-            f"CLIENTE REGISTRADO DETECTADO | {tel_norm} | "
-            f"{cliente_reg.get('nombre', '')} | {cliente_reg.get('direccion', '')}"
-        )
+    hora_actual = datetime.now(TZ_AR)
+
+    resultado_csv = buscar_contacto_csv(tel_norm)
+    if resultado_csv:
+        if resultado_csv["tipo"] == "unica":
+            fila = resultado_csv["fila"]
+            logger.info(f"CONTACTO CSV DETECTADO | {tel_norm} | {fila['nombre_contacto']} | 1 dirección(es)")
+            logger.info(f"CONTACTO DIRECCION UNICA | {tel_norm} | {fila['direccion_reclamo']}")
+            contexto_cliente = construir_contexto_desde_csv(fila, hora_actual)
+        else:
+            filas = resultado_csv["filas"]
+            dirs = [f["direccion_reclamo"] for f in filas]
+            logger.info(f"CONTACTO CSV DETECTADO | {tel_norm} | {filas[0]['nombre_contacto']} | {len(filas)} dirección(es)")
+            logger.info(f"CONTACTO MULTI DIRECCION | {tel_norm} | {dirs}")
+            fila_match = detectar_direccion_en_mensaje(texto, filas)
+            if fila_match:
+                logger.info(f"DIRECCION DETECTADA EN MENSAJE | {tel_norm} | {fila_match['direccion_reclamo']}")
+                contexto_cliente = construir_contexto_desde_csv(fila_match, hora_actual)
+            else:
+                contexto_cliente = construir_contexto_multi_sin_match(filas)
+    else:
+        cliente_reg = buscar_cliente_registrado(tel_norm)
+        if cliente_reg:
+            contexto_cliente = construir_contexto_cliente_registrado(cliente_reg, hora_actual)
+            logger.info(
+                f"CLIENTE REGISTRADO DETECTADO | {tel_norm} | "
+                f"{cliente_reg.get('nombre', '')} | {cliente_reg.get('direccion', '')}"
+            )
 
     respuesta = await generar_respuesta(texto, historial, contexto_cliente=contexto_cliente)
 
