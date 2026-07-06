@@ -381,6 +381,7 @@ async def procesar_mensaje_cliente(telefono: str, texto: str):
     respuesta = await generar_respuesta(texto, historial, contexto_cliente=contexto_cliente)
 
     tag_match = re.search(r'\[SOLICITUD_COMPLETA:(.+?)\]', respuesta, re.DOTALL)
+    _derivado_ok = False
     if tag_match:
         # Verificar si ya existe una solicitud registrada hoy para este número
         solicitud_existente = await obtener_solicitud_activa_por_telefono(telefono)
@@ -401,13 +402,12 @@ async def procesar_mensaje_cliente(telefono: str, texto: str):
             resultado_grupo = await notificar_grupo_solicitud(telefono, resumen_texto, proveedor, solicitud_id)
             if resultado_grupo:
                 logger.info(f"RECLAMO DERIVADO A GRUPO | solicitud #{solicitud_id} | {telefono}")
-                logger.info(f"SILENCIO POR RECLAMO DERIVADO | {telefono}")
-                await silenciar_conversacion(telefono, horas=6, motivo="reclamo_derivado_grupo")
+                _derivado_ok = True
             else:
                 logger.error(f"ERROR ENVÍO GRUPO — notificación falló para solicitud #{solicitud_id}")
         respuesta = re.sub(r'\[SOLICITUD_COMPLETA:.+?\]', '', respuesta, flags=re.DOTALL).strip()
         if not respuesta:
-            respuesta = "Perfecto, ya registramos el reclamo y lo derivamos al equipo técnico. Muchas gracias."
+            respuesta = "Perfecto, ya lo paso a los técnicos."
 
     if re.search(r'\[DERIVAR_ADMIN\]', respuesta):
         marcar_estado_conversacion(telefono, "pendiente_admin")
@@ -426,8 +426,13 @@ async def procesar_mensaje_cliente(telefono: str, texto: str):
 
     await guardar_mensaje(telefono, "user", texto)
     await guardar_mensaje(telefono, "assistant", respuesta)
+    if _derivado_ok:
+        logger.info(f"RESPUESTA CLIENTE POST DERIVACION | {telefono}")
     await _enviar_registrando(telefono, respuesta)
     logger.info(f"Respuesta a {telefono}: {respuesta}")
+    if _derivado_ok:
+        logger.info(f"SILENCIO POST CONFIRMACION CLIENTE | {telefono}")
+        await silenciar_conversacion(telefono, horas=6, motivo="reclamo_derivado_grupo")
 
 
 async def procesar_acumulados(telefono: str):
