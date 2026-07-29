@@ -71,5 +71,16 @@ def test_manija_suelta_es_reclamo_tecnico():
     assert es_reclamo_tecnico_claro(texto)
 
 
+def test_santos_dumont_desnivel_largo_se_conserva_completo():
+    texto = (
+        "Hola te paso de Santos Dumont 3454, tengo un ascensor que nivela mal. "
+        "Queda como 3 cm fuera de nivel, depende el piso"
+    )
+    datos = crear_derivacion_respaldo(texto)
+    assert datos is not None
+    assert datos["direccion"] == "Santos Dumont 3454"
+    assert len(str(datos["tipo"])) > 50
+
+
 def test_inferir_quien_abre_sin_nombre():
     assert inferir_quien_abre("Soy la portera de Rivadavia 2207") == "Quien escribe (portera)"

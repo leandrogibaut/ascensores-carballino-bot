@@ -48,7 +48,9 @@ class Solicitud(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     telefono_cliente: Mapped[str] = mapped_column(String(50), index=True)
-    tipo: Mapped[str] = mapped_column(String(50), default="")
+    # La descripción puede incluir el mensaje técnico completo. VARCHAR(50)
+    # truncaba reclamos reales antes de que pudieran enviarse al grupo.
+    tipo: Mapped[str] = mapped_column(Text, default="")
     nombre: Mapped[str] = mapped_column(String(100), default="")
     consorcio: Mapped[str] = mapped_column(String(200), default="")
     direccion: Mapped[str] = mapped_column(String(200), default="")
@@ -97,7 +99,16 @@ async def inicializar_db():
             await conn.execute(text("ALTER TABLE solicitudes ADD COLUMN mensaje_grupo_id VARCHAR(100) DEFAULT ''"))
     except Exception:
         pass  # la columna ya existe
-    # Paso 3: migración defensiva — columnas nuevas en mensajes_grupo
+    # Paso 3: ampliar la descripción técnica de instalaciones anteriores.
+    # SQLite no soporta esta forma de ALTER y seguirá usando TEXT por afinidad;
+    # PostgreSQL aplica la ampliación de VARCHAR(50) a TEXT de forma segura.
+    try:
+        async with engine.begin() as conn:
+            if conn.dialect.name == "postgresql":
+                await conn.execute(text("ALTER TABLE solicitudes ALTER COLUMN tipo TYPE TEXT"))
+    except Exception:
+        pass
+    # Paso 4: migración defensiva — columnas nuevas en mensajes_grupo
     for ddl in [
         "ALTER TABLE mensajes_grupo ADD COLUMN mensaje_id VARCHAR(100)",
         "ALTER TABLE mensajes_grupo ADD COLUMN reference_message_id VARCHAR(100)",

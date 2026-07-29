@@ -19,7 +19,8 @@ _EQUIPO_RE = re.compile(
 _FALLA_RE = re.compile(
     r"\b(no\s+(?:funciona|anda|abre|cierra|responde|sube|baja)|"
     r"parad[oa]s?|detenid[oa]s?|fuera\s+de\s+servicio|"
-    r"desnivelad[oa]s?|trab(?:ad[oa]|a)|falla|problema|"
+    r"desnivel(?:ad[oa]s?)?|nivela\s+mal|fuera\s+de\s+nivel|"
+    r"trab(?:ad[oa]|a)|falla|problema|"
     r"movimientos?\s+raros?|ruido|golpe|tiron|tirón|"
     r"encerrad[oa]s?|atrapad[oa]s?|gente\s+adentro|"
     r"se\s+(?:solto|soltó|salieron|rompio|rompió|corto|cortó)|"
@@ -52,7 +53,7 @@ _PREFIJOS_DESCARTABLES = {
     "hola", "buen", "buena", "buenos", "buenas", "dia", "día", "dias", "días",
     "tarde", "tardes", "noche", "noches", "soy", "somos", "de", "del", "desde",
     "aca", "acá", "en", "el", "la", "los", "las", "edificio", "direccion", "dirección",
-    "mi", "nombre", "es", "escribo", "encargado", "encargada", "portero", "portera",
+    "mi", "nombre", "es", "escribo", "te", "paso", "encargado", "encargada", "portero", "portera",
     "intendente", "intendenta", "administrador", "administradora",
 }
 

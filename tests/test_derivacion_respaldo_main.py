@@ -2,6 +2,7 @@ import asyncio
 import os
 
 import pytest
+from sqlalchemy import Text
 
 
 os.environ.setdefault("OLLAMA_API_KEY", "prueba-local")
@@ -11,6 +12,11 @@ os.environ.setdefault("ZAPI_TOKEN", "prueba")
 os.environ.setdefault("DATABASE_URL", "sqlite+aiosqlite:///./data/prueba-tests.db")
 
 from agent import main  # noqa: E402
+from agent.memory import Solicitud  # noqa: E402
+
+
+def test_descripcion_de_solicitud_admite_mas_de_50_caracteres():
+    assert isinstance(Solicitud.__table__.c.tipo.type, Text)
 
 
 @pytest.fixture
