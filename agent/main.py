@@ -43,6 +43,11 @@ from agent.conocimiento import (
 )
 from agent.providers import obtener_proveedor
 from agent.providers.zapi import es_intervencion_humana, extraer_numero_conversacion, normalizar_numero_whatsapp
+from agent.reclamos import (
+    crear_derivacion_respaldo,
+    es_reclamo_tecnico_claro,
+    extraer_direccion_libre,
+)
 from agent.tools import notificar_grupo_solicitud
 
 load_dotenv()
@@ -195,12 +200,26 @@ def formatear_resumen_solicitud(datos_raw: str) -> tuple[str, dict]:
         extraido["direccion"] = cliente["direccion"]
         extraido["consorcio"] = cliente["nombre"]
         new_dir = cliente["direccion"]
+        nombre = cliente.get("nombre", "")
+        etiqueta = f"{nombre} — {new_dir}" if nombre and nombre != new_dir else new_dir
         if old_dir and old_dir in resumen:
-            resumen = resumen.replace(old_dir, new_dir, 1)
+            resumen = resumen.replace(old_dir, etiqueta, 1)
         elif not old_dir:
-            resumen = new_dir + (". " + resumen if resumen else "")
+            resumen = etiqueta + (". " + resumen if resumen else "")
 
     return resumen, extraido
+
+
+def _datos_operativos_contacto(fila: dict) -> tuple[str, str]:
+    """Devuelve dirección legible para el grupo y quién recibe, si están precargados."""
+    direccion = fila.get("direccion_reclamo", "").strip()
+    sector = fila.get("sector_torre", "").strip()
+    grupo = fila.get("grupo_cliente_adm", "").strip()
+    quien_abre = fila.get("quien_abre", "").strip()
+    direccion_completa = f"{direccion} {sector}".strip() if sector else direccion
+    if grupo and grupo != direccion:
+        direccion_completa = f"{grupo} — {direccion_completa}"
+    return direccion_completa, quien_abre
 
 
 def analizar_mensaje_tecnico(texto: str) -> tuple[str, str]:
@@ -349,6 +368,8 @@ async def procesar_mensaje_cliente(telefono: str, texto: str):
 
     tel_norm = normalizar_numero_whatsapp(telefono)
     contexto_cliente = ""
+    direccion_contacto = ""
+    quien_abre_contacto = ""
     hora_actual = datetime.now(TZ_AR)
 
     resultado_csv = buscar_contacto_csv(tel_norm)
@@ -358,6 +379,7 @@ async def procesar_mensaje_cliente(telefono: str, texto: str):
             logger.info(f"CONTACTO CSV DETECTADO | {tel_norm} | {fila['nombre_contacto']} | 1 dirección(es)")
             logger.info(f"CONTACTO DIRECCION UNICA | {tel_norm} | {fila['direccion_reclamo']}")
             contexto_cliente = construir_contexto_desde_csv(fila, hora_actual)
+            direccion_contacto, quien_abre_contacto = _datos_operativos_contacto(fila)
         else:
             filas = resultado_csv["filas"]
             dirs = [f["direccion_reclamo"] for f in filas]
@@ -367,12 +389,15 @@ async def procesar_mensaje_cliente(telefono: str, texto: str):
             if fila_match:
                 logger.info(f"DIRECCION DETECTADA EN MENSAJE | {tel_norm} | {fila_match['direccion_reclamo']}")
                 contexto_cliente = construir_contexto_desde_csv(fila_match, hora_actual)
+                direccion_contacto, quien_abre_contacto = _datos_operativos_contacto(fila_match)
             else:
                 contexto_cliente = construir_contexto_multi_sin_match(filas)
     else:
         cliente_reg = buscar_cliente_registrado(tel_norm)
         if cliente_reg:
             contexto_cliente = construir_contexto_cliente_registrado(cliente_reg, hora_actual)
+            direccion_contacto = cliente_reg.get("direccion", "").strip()
+            quien_abre_contacto = cliente_reg.get("quien_abre", "").strip()
             logger.info(
                 f"CLIENTE REGISTRADO DETECTADO | {tel_norm} | "
                 f"{cliente_reg.get('nombre', '')} | {cliente_reg.get('direccion', '')}"
@@ -381,14 +406,52 @@ async def procesar_mensaje_cliente(telefono: str, texto: str):
     respuesta = await generar_respuesta(texto, historial, contexto_cliente=contexto_cliente)
 
     tag_match = re.search(r'\[SOLICITUD_COMPLETA:(.+?)\]', respuesta, re.DOTALL)
+    derivacion_respaldo = None
+    if not tag_match:
+        texto_respaldo = texto
+        direccion_mensaje = ""
+        cliente_en_mensaje = buscar_cliente_por_texto(texto)
+        if cliente_en_mensaje:
+            direccion_mensaje = cliente_en_mensaje.get("direccion", "").strip()
+        if not direccion_mensaje:
+            direccion_mensaje = extraer_direccion_libre(texto)
+
+        # Si el cliente responde solo la dirección solicitada, combinarla con el
+        # reclamo técnico del historial reciente para no perderlo.
+        if not es_reclamo_tecnico_claro(texto) and direccion_mensaje:
+            mensajes_usuario = [
+                item.get("content", "")
+                for item in historial
+                if item.get("role") == "user" and item.get("content")
+            ]
+            if mensajes_usuario:
+                texto_respaldo = "\n".join([*mensajes_usuario, texto])
+
+        direccion_preferida = direccion_mensaje or direccion_contacto
+        derivacion_respaldo = crear_derivacion_respaldo(
+            texto_respaldo,
+            direccion_preferida=direccion_preferida,
+            quien_abre_preferido=quien_abre_contacto,
+        )
+        if derivacion_respaldo:
+            logger.warning(
+                "DERIVACION DE RESPALDO ACTIVADA | "
+                f"{tel_norm} | direccion={derivacion_respaldo['direccion']} | "
+                f"disponibilidad_pendiente={derivacion_respaldo['disponibilidad_pendiente']}"
+            )
+
     _derivado_ok = False
-    if tag_match:
+    if tag_match or derivacion_respaldo:
         # Verificar si ya existe una solicitud registrada hoy para este número
         solicitud_existente = await obtener_solicitud_activa_por_telefono(telefono)
         if solicitud_existente:
             logger.info(f"Solicitud #{solicitud_existente.id} ya registrada para {telefono} — tag duplicado ignorado")
         else:
-            datos_raw = tag_match.group(1).strip()
+            datos_raw = (
+                tag_match.group(1).strip()
+                if tag_match
+                else str(derivacion_respaldo["datos_raw"])
+            )
             resumen_texto, extraido = formatear_resumen_solicitud(datos_raw)
             solicitud_id = await guardar_solicitud({
                 "telefono_cliente": telefono,
@@ -405,14 +468,23 @@ async def procesar_mensaje_cliente(telefono: str, texto: str):
                 _derivado_ok = True
             else:
                 logger.error(f"ERROR ENVÍO GRUPO — notificación falló para solicitud #{solicitud_id}")
-        respuesta = re.sub(r'\[SOLICITUD_COMPLETA:.+?\]', '', respuesta, flags=re.DOTALL).strip()
+        if tag_match:
+            respuesta = re.sub(r'\[SOLICITUD_COMPLETA:.+?\]', '', respuesta, flags=re.DOTALL).strip()
+        elif derivacion_respaldo and _derivado_ok and not derivacion_respaldo["emergencia"]:
+            if derivacion_respaldo["disponibilidad_pendiente"]:
+                respuesta = "Buen día. Ya pasé el reclamo a los técnicos con los datos disponibles."
+            else:
+                respuesta = "Perfecto, ya le enviamos la información a los técnicos para que vayan lo antes posible."
         if not respuesta:
             respuesta = "Perfecto, ya lo paso a los técnicos."
 
     if re.search(r'\[DERIVAR_ADMIN\]', respuesta):
-        marcar_estado_conversacion(telefono, "pendiente_admin")
         respuesta = re.sub(r'\[DERIVAR_ADMIN\]', '', respuesta).strip()
-        logger.info(f"Consulta administrativa de {telefono} derivada a equipo humano")
+        if _derivado_ok:
+            logger.info(f"Tag administrativo ignorado porque se derivó un reclamo técnico | {telefono}")
+        else:
+            marcar_estado_conversacion(telefono, "pendiente_admin")
+            logger.info(f"Consulta administrativa de {telefono} derivada a equipo humano")
 
     if not respuesta or not respuesta.strip():
         logger.error(f"Respuesta vacía generada para {telefono}. No se envía mensaje.")

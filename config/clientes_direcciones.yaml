@@ -791,6 +791,9 @@ clientes:
     direccion: "Foullier 5846"
     aliases:
       - "Foullier 5846"
+      - "Fouiller 5846"
+      - "Felix O Fouiller 5846"
+      - "Félix O. Fouiller 5846"
 
   - nombre: "Guayaquil 241"
     direccion: "Guayaquil 241"
@@ -871,3 +874,15 @@ clientes:
     direccion: "Reconquista 1046"
     aliases:
       - "Reconquista 1046"
+
+  - nombre: "Libertad 1262"
+    direccion: "Libertad 1262"
+    aliases:
+      - "Libertad 1262"
+
+  - nombre: "Arribeños / Montañeses 3150 Torre C"
+    direccion: "Montañeses 3150 Torre C"
+    aliases:
+      - "Montañeses 3150 Torre C"
+      - "Arribeños Torre C"
+      - "Torre C"
