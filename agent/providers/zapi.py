@@ -203,6 +203,7 @@ class ProveedorZapi(ProveedorWhatsApp):
             nombre_remitente=body.get("senderName", ""),
             texto_citado=texto_citado or None,
             from_api=body.get("fromApi", False),
+            es_audio="audio" in body,
         ))
         return mensajes
 

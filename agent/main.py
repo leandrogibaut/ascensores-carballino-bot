@@ -45,6 +45,7 @@ from agent.providers import obtener_proveedor
 from agent.providers.zapi import es_intervencion_humana, extraer_numero_conversacion, normalizar_numero_whatsapp
 from agent.reclamos import (
     crear_derivacion_respaldo,
+    es_emergencia_critica,
     es_reclamo_tecnico_claro,
     extraer_direccion_libre,
 )
@@ -284,8 +285,10 @@ async def enviar_resumen_diario():
 # ── Debounce: acumular mensajes por teléfono antes de procesar ──
 DEBOUNCE_SEGUNDOS = 10          # conversación activa (historial reciente)
 DEBOUNCE_NUEVO_SEGUNDOS = 120   # primer mensaje / conversación nueva (sin historial)
-mensajes_pendientes: dict[str, list[str]] = {}
+RECORDATORIO_DIRECCION_SEGUNDOS = int(os.getenv("RECORDATORIO_DIRECCION_SEGUNDOS", "300"))
+mensajes_pendientes: dict[str, list[tuple[str, bool]]] = {}
 tareas_pendientes: dict[str, "asyncio.Task"] = {}
+tareas_recordatorio_direccion: dict[str, "asyncio.Task"] = {}
 _MAX_IDS_PROCESADOS = 5000
 mensajes_webhook_procesados: set[str] = set()
 mensajes_enviados_por_bot: set[str] = set()
@@ -293,6 +296,20 @@ _contenidos_procesados: dict[tuple, datetime] = {}
 _MAX_CONTENIDOS_PROCESADOS = 2000
 
 conversaciones_estado: dict[str, dict] = {}
+
+PEDIDO_DIRECCION = (
+    "Para poder enviar el reclamo a los técnicos necesito la dirección exacta "
+    "del edificio (calle y altura). ¿Me la pasás, por favor?"
+)
+RECORDATORIO_DIRECCION = (
+    "Todavía necesito la dirección exacta del edificio (calle y altura). "
+    "Hasta que no nos la envíes no voy a poder pasar el reclamo a los técnicos."
+)
+PEDIDO_DIRECCION_EMERGENCIA = (
+    "Llamá ahora por teléfono común al 4301-3967 o al 1565024510. "
+    "No llamada de WhatsApp.\n\n"
+    "Decime también la dirección exacta del edificio (calle y altura) para poder avisar a los técnicos."
+)
 
 def marcar_estado_conversacion(telefono: str, estado: str):
     conversaciones_estado[telefono] = {"estado": estado, "timestamp": datetime.now()}
@@ -308,6 +325,65 @@ def obtener_estado_conversacion(telefono: str) -> str | None:
 
 def limpiar_estado_conversacion(telefono: str):
     conversaciones_estado.pop(telefono, None)
+
+
+def cancelar_recordatorio_direccion(telefono: str):
+    tarea = tareas_recordatorio_direccion.pop(telefono, None)
+    if tarea and not tarea.done():
+        tarea.cancel()
+
+
+def _historial_espera_direccion(historial: list[dict]) -> bool:
+    for item in reversed(historial[-6:]):
+        if item.get("role") != "assistant":
+            continue
+        contenido = str(item.get("content", "")).lower()
+        return "dirección exacta" in contenido or "cuál es la dirección" in contenido
+    return False
+
+
+def _direccion_confirmada(
+    texto_actual: str,
+    historial: list[dict],
+    direccion_contacto: str = "",
+) -> str:
+    """Obtiene una dirección verificable sin confiar en datos inventados por el modelo."""
+    textos_usuario = [
+        str(item.get("content", ""))
+        for item in historial
+        if item.get("role") == "user" and item.get("content")
+    ]
+    for candidato in [texto_actual, *reversed(textos_usuario)]:
+        cliente = buscar_cliente_por_texto(candidato)
+        if cliente and cliente.get("direccion"):
+            return str(cliente["direccion"]).strip()
+        libre = extraer_direccion_libre(candidato)
+        if libre:
+            return libre
+    return direccion_contacto.strip()
+
+
+async def _recordar_direccion(telefono: str):
+    try:
+        await asyncio.sleep(RECORDATORIO_DIRECCION_SEGUNDOS)
+        if obtener_estado_conversacion(telefono) != "pendiente_direccion":
+            return
+        if await conversacion_silenciada(telefono):
+            return
+        await guardar_mensaje(telefono, "assistant", RECORDATORIO_DIRECCION)
+        await _enviar_registrando(telefono, RECORDATORIO_DIRECCION)
+        logger.info(f"RECORDATORIO DIRECCION ENVIADO | {normalizar_numero_whatsapp(telefono)}")
+    except asyncio.CancelledError:
+        logger.debug(f"Recordatorio de dirección cancelado | {normalizar_numero_whatsapp(telefono)}")
+    finally:
+        tareas_recordatorio_direccion.pop(telefono, None)
+
+
+def programar_recordatorio_direccion(telefono: str):
+    cancelar_recordatorio_direccion(telefono)
+    tareas_recordatorio_direccion[telefono] = asyncio.create_task(
+        _recordar_direccion(telefono)
+    )
 
 scheduler = None
 
@@ -357,11 +433,12 @@ async def silenciar_conversacion(numero: str, horas: int = 6, motivo: str = ""):
     if tarea and not tarea.done():
         tarea.cancel()
     mensajes_pendientes.pop(original, None)
+    cancelar_recordatorio_direccion(original)
     silencio_hasta = (datetime.utcnow() + timedelta(hours=horas)).strftime("%Y-%m-%d %H:%M UTC")
     logger.warning(f"Silencio {horas}hs para {numero_norm} | hasta: {silencio_hasta} | motivo: {motivo}")
 
 
-async def procesar_mensaje_cliente(telefono: str, texto: str):
+async def procesar_mensaje_cliente(telefono: str, texto: str, es_audio: bool = False):
     """Procesa un mensaje de cliente y genera respuesta de Olivia."""
     import asyncio
     historial = await obtener_historial(telefono)
@@ -403,31 +480,64 @@ async def procesar_mensaje_cliente(telefono: str, texto: str):
                 f"{cliente_reg.get('nombre', '')} | {cliente_reg.get('direccion', '')}"
             )
 
-    respuesta = await generar_respuesta(texto, historial, contexto_cliente=contexto_cliente)
+    textos_usuario_historial = [
+        str(item.get("content", ""))
+        for item in historial
+        if item.get("role") == "user" and item.get("content")
+    ]
+    texto_contexto = "\n".join([*textos_usuario_historial, texto])
+    direccion_confirmada = _direccion_confirmada(texto, historial, direccion_contacto)
+    esperaba_direccion = (
+        obtener_estado_conversacion(telefono) == "pendiente_direccion"
+        or _historial_espera_direccion(historial)
+    )
+
+    mensaje_modelo = texto
+    if es_audio:
+        mensaje_modelo = (
+            "[Nota de voz transcripta internamente. Interpretá su intención y respondé a lo que "
+            "la persona necesita. No repitas, no cites y no resumas la transcripción.]\n"
+            + texto
+        )
+
+    respuesta = await generar_respuesta(
+        mensaje_modelo,
+        historial,
+        contexto_cliente=contexto_cliente,
+    )
 
     tag_match = re.search(r'\[SOLICITUD_COMPLETA:(.+?)\]', respuesta, re.DOTALL)
+    reclamo_en_curso = (
+        bool(tag_match)
+        or esperaba_direccion
+        or es_reclamo_tecnico_claro(texto_contexto)
+    )
+
+    # La dirección es una barrera determinista: el modelo nunca puede saltearla
+    # inventando un tag incompleto. Horario y quién abre siguen siendo opcionales.
+    if reclamo_en_curso and not direccion_confirmada:
+        if es_emergencia_critica(texto_contexto):
+            respuesta = PEDIDO_DIRECCION_EMERGENCIA
+        else:
+            respuesta = RECORDATORIO_DIRECCION if esperaba_direccion else PEDIDO_DIRECCION
+        tag_match = None
+        marcar_estado_conversacion(telefono, "pendiente_direccion")
+        programar_recordatorio_direccion(telefono)
+        logger.warning(f"RECLAMO RETENIDO SIN DIRECCION | {tel_norm}")
+
     derivacion_respaldo = None
-    if not tag_match:
-        texto_respaldo = texto
+    if not tag_match and not (reclamo_en_curso and not direccion_confirmada):
+        texto_respaldo = texto_contexto
         direccion_mensaje = ""
-        cliente_en_mensaje = buscar_cliente_por_texto(texto)
+        cliente_en_mensaje = buscar_cliente_por_texto(texto_contexto)
         if cliente_en_mensaje:
             direccion_mensaje = cliente_en_mensaje.get("direccion", "").strip()
         if not direccion_mensaje:
-            direccion_mensaje = extraer_direccion_libre(texto)
+            direccion_mensaje = extraer_direccion_libre(texto_contexto)
 
         # Si el cliente responde solo la dirección solicitada, combinarla con el
         # reclamo técnico del historial reciente para no perderlo.
-        if not es_reclamo_tecnico_claro(texto) and direccion_mensaje:
-            mensajes_usuario = [
-                item.get("content", "")
-                for item in historial
-                if item.get("role") == "user" and item.get("content")
-            ]
-            if mensajes_usuario:
-                texto_respaldo = "\n".join([*mensajes_usuario, texto])
-
-        direccion_preferida = direccion_mensaje or direccion_contacto
+        direccion_preferida = direccion_confirmada or direccion_mensaje or direccion_contacto
         derivacion_respaldo = crear_derivacion_respaldo(
             texto_respaldo,
             direccion_preferida=direccion_preferida,
@@ -453,6 +563,19 @@ async def procesar_mensaje_cliente(telefono: str, texto: str):
                 else str(derivacion_respaldo["datos_raw"])
             )
             resumen_texto, extraido = formatear_resumen_solicitud(datos_raw)
+            # Para tags creados por el LLM, usar siempre la dirección comprobada
+            # en el mensaje, el historial o la ficha del contacto.
+            if direccion_confirmada:
+                direccion_modelo = extraido.get("direccion", "")
+                if direccion_modelo and direccion_modelo in resumen_texto:
+                    resumen_texto = resumen_texto.replace(
+                        direccion_modelo,
+                        direccion_confirmada,
+                        1,
+                    )
+                elif direccion_confirmada not in resumen_texto:
+                    resumen_texto = f"{direccion_confirmada}. {resumen_texto}".strip()
+                extraido["direccion"] = direccion_confirmada
             solicitud_id = await guardar_solicitud({
                 "telefono_cliente": telefono,
                 "tipo": extraido.get("tipo", ""),
@@ -466,15 +589,14 @@ async def procesar_mensaje_cliente(telefono: str, texto: str):
             if resultado_grupo:
                 logger.info(f"RECLAMO DERIVADO A GRUPO | solicitud #{solicitud_id} | {telefono}")
                 _derivado_ok = True
+                limpiar_estado_conversacion(telefono)
+                cancelar_recordatorio_direccion(telefono)
             else:
                 logger.error(f"ERROR ENVÍO GRUPO — notificación falló para solicitud #{solicitud_id}")
         if tag_match:
             respuesta = re.sub(r'\[SOLICITUD_COMPLETA:.+?\]', '', respuesta, flags=re.DOTALL).strip()
-        elif derivacion_respaldo and _derivado_ok and not derivacion_respaldo["emergencia"]:
-            if derivacion_respaldo["disponibilidad_pendiente"]:
-                respuesta = "Buen día. Ya pasé el reclamo a los técnicos con los datos disponibles."
-            else:
-                respuesta = "Perfecto, ya le enviamos la información a los técnicos para que vayan lo antes posible."
+        if _derivado_ok and not es_emergencia_critica(texto_contexto):
+            respuesta = "Perfecto, ya le enviamos la información a los técnicos para que vayan lo antes posible."
         if not respuesta:
             respuesta = "Perfecto, ya lo paso a los técnicos."
 
@@ -490,7 +612,8 @@ async def procesar_mensaje_cliente(telefono: str, texto: str):
         logger.error(f"Respuesta vacía generada para {telefono}. No se envía mensaje.")
         return
 
-    respuesta = asegurar_aviso_emergencia(respuesta)
+    if es_emergencia_critica(texto_contexto):
+        respuesta = asegurar_aviso_emergencia(respuesta)
 
     if await conversacion_silenciada(telefono):
         logger.info(f"NO RESPONDE: conversación silenciada (detectada antes de enviar) | {telefono}")
@@ -510,10 +633,12 @@ async def procesar_mensaje_cliente(telefono: str, texto: str):
 async def procesar_acumulados(telefono: str):
     debounce = DEBOUNCE_SEGUNDOS if await tiene_mensajes_recientes(telefono) else DEBOUNCE_NUEVO_SEGUNDOS
     await asyncio.sleep(debounce)
-    textos = mensajes_pendientes.pop(telefono, [])
+    entradas = mensajes_pendientes.pop(telefono, [])
     tareas_pendientes.pop(telefono, None)
-    if not textos:
+    if not entradas:
         return
+    textos = [texto for texto, _es_audio in entradas]
+    contiene_audio = any(es_audio for _texto, es_audio in entradas)
     texto_combinado = "\n".join(textos)
     logger.info(f"Procesando {len(textos)} mensaje(s) de {telefono}: {texto_combinado}")
 
@@ -529,7 +654,7 @@ async def procesar_acumulados(telefono: str):
         logger.info(f"CIERRE DETECTADO: no se responde | {telefono} | '{texto_combinado}'")
         return
 
-    await procesar_mensaje_cliente(telefono, texto_combinado)
+    await procesar_mensaje_cliente(telefono, texto_combinado, es_audio=contiene_audio)
 
 
 @asynccontextmanager
@@ -751,7 +876,7 @@ async def webhook_handler(request: Request):
             import asyncio
             if msg.telefono not in mensajes_pendientes:
                 mensajes_pendientes[msg.telefono] = []
-            mensajes_pendientes[msg.telefono].append(msg.texto)
+            mensajes_pendientes[msg.telefono].append((msg.texto, msg.es_audio))
 
             # Cancelar tarea anterior si existe
             tarea_anterior = tareas_pendientes.get(msg.telefono)

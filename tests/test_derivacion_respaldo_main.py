@@ -59,6 +59,7 @@ def flujo_aislado(monkeypatch):
     monkeypatch.setattr(main, "_enviar_registrando", enviar_cliente)
     monkeypatch.setattr(main, "buscar_contacto_csv", lambda _telefono: None)
     monkeypatch.setattr(main, "buscar_cliente_registrado", lambda _telefono: None)
+    monkeypatch.setattr(main, "programar_recordatorio_direccion", lambda _telefono: None)
 
     return enviados_grupo, enviados_cliente, solicitudes
 
@@ -160,3 +161,114 @@ def test_respuesta_posterior_con_solo_direccion_completa_el_reclamo(monkeypatch,
 
     assert len(grupos) == 1
     assert solicitudes[0]["direccion"] == "Libertad 1262"
+
+
+def test_tag_del_modelo_sin_direccion_no_pasa_al_grupo(monkeypatch, flujo_aislado):
+    async def responder(*_args, **_kwargs):
+        return (
+            "Listo, gracias. "
+            "[SOLICITUD_COMPLETA: Hotel Alcázar Fabián. Ascensor detenido. Disponibilidad no informada.]"
+        )
+
+    monkeypatch.setattr(main, "generar_respuesta", responder)
+    grupos, clientes, solicitudes = flujo_aislado
+
+    asyncio.run(
+        main.procesar_mensaje_cliente(
+            "5491100007777",
+            "Se quedó el ascensor entre dos pisos y ahora no funciona",
+        )
+    )
+
+    assert grupos == []
+    assert solicitudes == []
+    assert "dirección exacta" in clientes[0][1].lower()
+    assert "no voy a poder pasar" not in clientes[0][1].lower()
+
+
+def test_insiste_si_responden_sin_direccion(monkeypatch, flujo_aislado):
+    async def responder(*_args, **_kwargs):
+        return "Listo, gracias."
+
+    async def historial(_telefono):
+        return [
+            {"role": "user", "content": "El ascensor quedó parado"},
+            {"role": "assistant", "content": main.PEDIDO_DIRECCION},
+        ]
+
+    monkeypatch.setattr(main, "generar_respuesta", responder)
+    monkeypatch.setattr(main, "obtener_historial", historial)
+    grupos, clientes, solicitudes = flujo_aislado
+
+    asyncio.run(main.procesar_mensaje_cliente("5491100007778", "No sé, averiguo"))
+
+    assert grupos == []
+    assert solicitudes == []
+    assert "no voy a poder pasar" in clientes[0][1].lower()
+
+
+def test_audio_se_interpreta_sin_devolver_transcripcion(monkeypatch, flujo_aislado):
+    recibido_modelo = []
+
+    async def responder(mensaje, *_args, **_kwargs):
+        recibido_modelo.append(mensaje)
+        return "Entendido, la carcasa de acero inoxidable alrededor del techo..."
+
+    monkeypatch.setattr(main, "generar_respuesta", responder)
+    grupos, clientes, solicitudes = flujo_aislado
+
+    asyncio.run(
+        main.procesar_mensaje_cliente(
+            "5491100007779",
+            "El ascensor no funciona y hace ruido",
+            es_audio=True,
+        )
+    )
+
+    assert "No repitas" in recibido_modelo[0]
+    assert grupos == []
+    assert solicitudes == []
+    assert clientes[0][1].startswith("Para poder enviar")
+    assert "carcasa" not in clientes[0][1].lower()
+
+
+def test_reclamo_con_direccion_no_agrega_aviso_de_emergencia(monkeypatch, flujo_aislado):
+    async def responder(*_args, **_kwargs):
+        return (
+            "Perfecto. "
+            "[SOLICITUD_COMPLETA: Ugarteche 3050. Ascensor parado. Disponibilidad no informada.]"
+        )
+
+    monkeypatch.setattr(main, "generar_respuesta", responder)
+    grupos, clientes, _solicitudes = flujo_aislado
+
+    asyncio.run(
+        main.procesar_mensaje_cliente(
+            "5491100007780",
+            "Ugarteche 3050 ascensor parado",
+        )
+    )
+
+    assert len(grupos) == 1
+    assert "4301-3967" not in clientes[0][1]
+    assert clientes[0][1].startswith("Perfecto, ya le enviamos")
+
+
+def test_emergencia_sin_direccion_prioriza_llamada_y_no_deriva(monkeypatch, flujo_aislado):
+    async def responder(*_args, **_kwargs):
+        return "Llamá ahora por teléfono común."
+
+    monkeypatch.setattr(main, "generar_respuesta", responder)
+    grupos, clientes, solicitudes = flujo_aislado
+
+    asyncio.run(
+        main.procesar_mensaje_cliente(
+            "5491100007781",
+            "Hay una persona encerrada dentro del ascensor",
+        )
+    )
+
+    assert grupos == []
+    assert solicitudes == []
+    assert clientes[0][1].startswith("Llamá ahora")
+    assert "dirección exacta" in clientes[0][1].lower()

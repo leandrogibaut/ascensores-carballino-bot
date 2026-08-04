@@ -109,6 +109,7 @@ class ProveedorWhapi(ProveedorWhatsApp):
                 texto=texto,
                 mensaje_id=msg.get("id", ""),
                 es_propio=msg.get("from_me", False),
+                es_audio=tipo in ("audio", "ptt"),
             ))
         return mensajes
 
