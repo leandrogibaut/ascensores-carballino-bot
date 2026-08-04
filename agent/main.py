@@ -50,6 +50,7 @@ from agent.reclamos import (
     extraer_direccion_libre,
 )
 from agent.tools import notificar_grupo_solicitud
+from agent.horarios import estado_atencion_olivia, olivia_debe_atender
 
 load_dotenv()
 
@@ -368,6 +369,12 @@ async def _recordar_direccion(telefono: str):
         await asyncio.sleep(RECORDATORIO_DIRECCION_SEGUNDOS)
         if obtener_estado_conversacion(telefono) != "pendiente_direccion":
             return
+        if not olivia_debe_atender():
+            logger.info(
+                f"RECORDATORIO DIRECCION OMITIDO POR HORARIO HUMANO | "
+                f"{normalizar_numero_whatsapp(telefono)}"
+            )
+            return
         if await conversacion_silenciada(telefono):
             return
         await guardar_mensaje(telefono, "assistant", RECORDATORIO_DIRECCION)
@@ -642,6 +649,12 @@ async def procesar_acumulados(telefono: str):
     texto_combinado = "\n".join(textos)
     logger.info(f"Procesando {len(textos)} mensaje(s) de {telefono}: {texto_combinado}")
 
+    # Segunda barrera por si el debounce comenzó fuera de horario y terminó
+    # durante la franja atendida por el personal de la empresa.
+    if not olivia_debe_atender():
+        logger.info(f"NO RESPONDE: horario de atención humana | {telefono}")
+        return
+
     if await conversacion_silenciada(telefono):
         logger.info(f"NO RESPONDE: conversación silenciada | {telefono}")
         return
@@ -679,7 +692,15 @@ app = FastAPI(
 @app.get("/")
 async def health_check():
     """Endpoint de salud para Railway/monitoreo."""
-    return {"status": "ok", "service": "agentkit", "agente": "Olivia"}
+    horario = estado_atencion_olivia()
+    return {
+        "status": "ok",
+        "service": "agentkit",
+        "agente": "Olivia",
+        "respuestas_automaticas": horario["respuestas_automaticas"],
+        "motivo_horario": horario["motivo"],
+        "hora_local": horario["hora_local"],
+    }
 
 
 @app.get("/api/mensajes-grupo-hoy")
@@ -722,6 +743,21 @@ async def webhook_handler(request: Request):
             if numero:
                 await silenciar_conversacion(numero, horas=6, motivo="intervencion_humana")
                 return {"ok": True, "silenciado": True}
+
+        # Durante el horario de oficina los chats privados quedan exclusivamente
+        # en manos del personal. El corte ocurre antes de descargar/transcribir
+        # audios para evitar cualquier respuesta o procesamiento innecesario.
+        if not payload.get("isGroup") and not payload.get("fromMe") and not olivia_debe_atender():
+            telefono_horario = extraer_numero_conversacion(payload)
+            logger.info(
+                "NO RESPONDE: horario de atención humana | "
+                f"{telefono_horario or 'numero_no_disponible'}"
+            )
+            return {
+                "ok": True,
+                "respuesta_automatica": False,
+                "motivo": "horario_de_atencion_humana",
+            }
 
         mensajes = await proveedor.parsear_webhook(request)
 
