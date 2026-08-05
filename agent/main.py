@@ -49,7 +49,6 @@ from agent.reclamos import (
     es_reclamo_tecnico_claro,
     extraer_direccion_libre,
 )
-from agent.tools import notificar_grupo_solicitud
 from agent.horarios import estado_atencion_olivia, olivia_debe_atender
 
 load_dotenv()
@@ -149,7 +148,7 @@ def _ya_procesado_por_contenido(telefono: str, texto: str, ventana_seg: int = 12
 
 
 def formatear_resumen_solicitud(datos_raw: str) -> tuple[str, dict]:
-    """Convierte el tag interno de solicitud en un párrafo corto para el grupo.
+    """Convierte el tag interno de solicitud en datos para el registro.
     Soporta formato nuevo (texto libre) y formato viejo (clave="valor").
     """
     # Detectar formato viejo por presencia de claves conocidas
@@ -213,7 +212,7 @@ def formatear_resumen_solicitud(datos_raw: str) -> tuple[str, dict]:
 
 
 def _datos_operativos_contacto(fila: dict) -> tuple[str, str]:
-    """Devuelve dirección legible para el grupo y quién recibe, si están precargados."""
+    """Devuelve dirección legible y quién recibe, si están precargados."""
     direccion = fila.get("direccion_reclamo", "").strip()
     sector = fila.get("sector_torre", "").strip()
     grupo = fila.get("grupo_cliente_adm", "").strip()
@@ -299,17 +298,17 @@ _MAX_CONTENIDOS_PROCESADOS = 2000
 conversaciones_estado: dict[str, dict] = {}
 
 PEDIDO_DIRECCION = (
-    "Para poder enviar el reclamo a los técnicos necesito la dirección exacta "
+    "Para poder registrar correctamente el reclamo necesito la dirección exacta "
     "del edificio (calle y altura). ¿Me la pasás, por favor?"
 )
 RECORDATORIO_DIRECCION = (
     "Todavía necesito la dirección exacta del edificio (calle y altura). "
-    "Hasta que no nos la envíes no voy a poder pasar el reclamo a los técnicos."
+    "Hasta que no nos la envíes no voy a poder registrar correctamente el reclamo."
 )
 PEDIDO_DIRECCION_EMERGENCIA = (
     "Llamá ahora por teléfono común al 4301-3967 o al 1565024510. "
     "No llamada de WhatsApp.\n\n"
-    "Decime también la dirección exacta del edificio (calle y altura) para poder avisar a los técnicos."
+    "Decime también la dirección exacta del edificio (calle y altura) para poder registrar el reclamo."
 )
 
 def marcar_estado_conversacion(telefono: str, estado: str):
@@ -557,31 +556,25 @@ async def procesar_mensaje_cliente(telefono: str, texto: str, es_audio: bool = F
                 f"disponibilidad_pendiente={derivacion_respaldo['disponibilidad_pendiente']}"
             )
 
-    _derivado_ok = False
+    _registrado_ok = False
     if tag_match or derivacion_respaldo:
         # Verificar si ya existe una solicitud registrada hoy para este número
         solicitud_existente = await obtener_solicitud_activa_por_telefono(telefono)
         if solicitud_existente:
             logger.info(f"Solicitud #{solicitud_existente.id} ya registrada para {telefono} — tag duplicado ignorado")
+            _registrado_ok = True
+            limpiar_estado_conversacion(telefono)
+            cancelar_recordatorio_direccion(telefono)
         else:
             datos_raw = (
                 tag_match.group(1).strip()
                 if tag_match
                 else str(derivacion_respaldo["datos_raw"])
             )
-            resumen_texto, extraido = formatear_resumen_solicitud(datos_raw)
+            _, extraido = formatear_resumen_solicitud(datos_raw)
             # Para tags creados por el LLM, usar siempre la dirección comprobada
             # en el mensaje, el historial o la ficha del contacto.
             if direccion_confirmada:
-                direccion_modelo = extraido.get("direccion", "")
-                if direccion_modelo and direccion_modelo in resumen_texto:
-                    resumen_texto = resumen_texto.replace(
-                        direccion_modelo,
-                        direccion_confirmada,
-                        1,
-                    )
-                elif direccion_confirmada not in resumen_texto:
-                    resumen_texto = f"{direccion_confirmada}. {resumen_texto}".strip()
                 extraido["direccion"] = direccion_confirmada
             solicitud_id = await guardar_solicitud({
                 "telefono_cliente": telefono,
@@ -592,25 +585,24 @@ async def procesar_mensaje_cliente(telefono: str, texto: str, es_audio: bool = F
                 "quien_abre": extraido.get("quien_abre", ""),
                 "piso_depto": extraido.get("piso_depto", ""),
             })
-            resultado_grupo = await notificar_grupo_solicitud(telefono, resumen_texto, proveedor, solicitud_id)
-            if resultado_grupo:
-                logger.info(f"RECLAMO DERIVADO A GRUPO | solicitud #{solicitud_id} | {telefono}")
-                _derivado_ok = True
+            if solicitud_id:
+                logger.info(f"RECLAMO REGISTRADO SIN ENVIO A GRUPO | solicitud #{solicitud_id} | {telefono}")
+                _registrado_ok = True
                 limpiar_estado_conversacion(telefono)
                 cancelar_recordatorio_direccion(telefono)
             else:
-                logger.error(f"ERROR ENVÍO GRUPO — notificación falló para solicitud #{solicitud_id}")
+                logger.error(f"ERROR AL REGISTRAR RECLAMO | {telefono}")
         if tag_match:
             respuesta = re.sub(r'\[SOLICITUD_COMPLETA:.+?\]', '', respuesta, flags=re.DOTALL).strip()
-        if _derivado_ok and not es_emergencia_critica(texto_contexto):
-            respuesta = "Perfecto, ya le enviamos la información a los técnicos para que vayan lo antes posible."
+        if _registrado_ok and not es_emergencia_critica(texto_contexto):
+            respuesta = "Perfecto, el reclamo quedó registrado."
         if not respuesta:
-            respuesta = "Perfecto, ya lo paso a los técnicos."
+            respuesta = "Perfecto, el reclamo quedó registrado."
 
     if re.search(r'\[DERIVAR_ADMIN\]', respuesta):
         respuesta = re.sub(r'\[DERIVAR_ADMIN\]', '', respuesta).strip()
-        if _derivado_ok:
-            logger.info(f"Tag administrativo ignorado porque se derivó un reclamo técnico | {telefono}")
+        if _registrado_ok:
+            logger.info(f"Tag administrativo ignorado porque se registró un reclamo técnico | {telefono}")
         else:
             marcar_estado_conversacion(telefono, "pendiente_admin")
             logger.info(f"Consulta administrativa de {telefono} derivada a equipo humano")
@@ -628,13 +620,10 @@ async def procesar_mensaje_cliente(telefono: str, texto: str, es_audio: bool = F
 
     await guardar_mensaje(telefono, "user", texto)
     await guardar_mensaje(telefono, "assistant", respuesta)
-    if _derivado_ok:
-        logger.info(f"RESPUESTA CLIENTE POST DERIVACION | {telefono}")
+    if _registrado_ok:
+        logger.info(f"RESPUESTA CLIENTE POST REGISTRO | {telefono}")
     await _enviar_registrando(telefono, respuesta)
     logger.info(f"Respuesta a {telefono}: {respuesta}")
-    if _derivado_ok:
-        logger.info(f"SILENCIO POST CONFIRMACION CLIENTE | {telefono}")
-        await silenciar_conversacion(telefono, horas=6, motivo="reclamo_derivado_grupo")
 
 
 async def procesar_acumulados(telefono: str):

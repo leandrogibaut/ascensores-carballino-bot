@@ -6,6 +6,7 @@ import logging
 import httpx
 from fastapi import Request
 from agent.providers.base import ProveedorWhatsApp, MensajeEntrante
+from agent.grupos import es_destino_grupo
 
 logger = logging.getLogger("agentkit")
 
@@ -115,6 +116,12 @@ class ProveedorWhapi(ProveedorWhatsApp):
 
     async def enviar_mensaje(self, telefono: str, mensaje: str) -> bool:
         """Envía mensaje via Whapi.cloud."""
+        if es_destino_grupo(telefono):
+            logger.critical(
+                "SALIDA A GRUPO BLOQUEADA | proveedor=Whapi | "
+                f"destino={telefono} | modo=solo_lectura"
+            )
+            return False
         if not self.token:
             logger.warning("WHAPI_TOKEN no configurado — mensaje no enviado")
             return False

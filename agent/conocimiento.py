@@ -124,7 +124,7 @@ def construir_contexto_cliente_registrado(cliente: dict, hora_actual: datetime |
             lineas.append(
                 f"- REGLA ESPECIAL: El mensaje llegó fuera del horario operativo ({horario}). "
                 "Preguntá si hay alguien disponible para recibir al técnico antes de emitir [SOLICITUD_COMPLETA]. "
-                "Si el cliente ya aclaró que hay alguien, derivar sin preguntar."
+                "Si el cliente ya aclaró que hay alguien, registrar sin preguntar."
             )
         else:
             lineas.append(f"- NO pedir quién abre ni horario, está dentro del horario registrado ({horario})")
@@ -132,7 +132,7 @@ def construir_contexto_cliente_registrado(cliente: dict, hora_actual: datetime |
     lineas.append(
         "- Si el mensaje describe una falla o reclamo técnico suficiente → "
         f"completar [SOLICITUD_COMPLETA] con: {direccion}. {{falla}}. {quien_abre}. "
-        "Responder al cliente: \"Perfecto, ya lo paso a los técnicos.\""
+        "Responder al cliente: \"Perfecto, el reclamo quedó registrado.\""
     )
     lineas.append(
         "- Si el mensaje es ambiguo (saludo, 'necesito un técnico', 'pueden venir', 'me reclamaron', etc.) → "
@@ -364,7 +364,7 @@ def construir_contexto_desde_csv(fila: dict, hora_actual: "datetime | None" = No
             lineas.append(
                 f"- REGLA ESPECIAL: El mensaje llegó fuera del horario operativo ({horario}). "
                 "Preguntá si hay alguien disponible para recibir al técnico antes de emitir [SOLICITUD_COMPLETA]. "
-                "Si el cliente ya aclaró que hay alguien, derivar sin preguntar."
+                "Si el cliente ya aclaró que hay alguien, registrar sin preguntar."
             )
         else:
             lineas.append(f"- NO pedir quién abre ni horario, está dentro del horario registrado ({horario})")
@@ -372,7 +372,7 @@ def construir_contexto_desde_csv(fila: dict, hora_actual: "datetime | None" = No
     lineas.append(
         "- Si el mensaje describe una falla o reclamo técnico suficiente → "
         f"completar [SOLICITUD_COMPLETA] con: {direccion_para_tag}. {{falla}}. {quien_abre}. "
-        "Responder al cliente: \"Perfecto, ya lo paso a los técnicos.\""
+        "Responder al cliente: \"Perfecto, el reclamo quedó registrado.\""
     )
     lineas.append(
         "- Si el mensaje es ambiguo (saludo, 'necesito un técnico', 'pueden venir', etc.) → "

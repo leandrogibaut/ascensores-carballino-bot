@@ -8,6 +8,7 @@ import logging
 import httpx
 from fastapi import Request
 from agent.providers.base import ProveedorWhatsApp, MensajeEntrante
+from agent.grupos import es_destino_grupo
 
 logger = logging.getLogger("agentkit")
 
@@ -209,6 +210,12 @@ class ProveedorZapi(ProveedorWhatsApp):
 
     async def enviar_mensaje(self, telefono: str, mensaje: str) -> str | None:
         """Envía mensaje de texto via Z-API. Retorna el messageId si fue exitoso, None si falló."""
+        if es_destino_grupo(telefono):
+            logger.critical(
+                "SALIDA A GRUPO BLOQUEADA | proveedor=Z-API | "
+                f"destino={telefono} | modo=solo_lectura"
+            )
+            return None
         logger.info(f"Z-API enviar — instance_id: {bool(self._instance_id)}, token: {bool(self._token)}")
         if not self._instance_id or not self._token:
             logger.warning("ZAPI_INSTANCE_ID o ZAPI_TOKEN no disponibles")
@@ -230,6 +237,12 @@ class ProveedorZapi(ProveedorWhatsApp):
 
     async def enviar_menu_botones(self, telefono: str, texto: str, botones: list[dict]) -> bool:
         """Envía un mensaje con botones interactivos via Z-API (send-button-list)."""
+        if es_destino_grupo(telefono):
+            logger.critical(
+                "SALIDA A GRUPO BLOQUEADA | proveedor=Z-API | "
+                f"destino={telefono} | tipo=botones | modo=solo_lectura"
+            )
+            return False
         if not self._instance_id or not self._token:
             logger.warning("ZAPI_INSTANCE_ID o ZAPI_TOKEN no disponibles")
             return False

@@ -35,10 +35,6 @@ def flujo_aislado(monkeypatch):
         solicitudes.append(datos)
         return 101
 
-    async def grupo(telefono, resumen, proveedor, solicitud_id):
-        enviados_grupo.append((telefono, resumen, solicitud_id))
-        return "mensaje-grupo-101"
-
     async def no_op(*_args, **_kwargs):
         return None
 
@@ -52,7 +48,6 @@ def flujo_aislado(monkeypatch):
     monkeypatch.setattr(main, "obtener_historial", historial)
     monkeypatch.setattr(main, "obtener_solicitud_activa_por_telefono", sin_solicitud)
     monkeypatch.setattr(main, "guardar_solicitud", guardar)
-    monkeypatch.setattr(main, "notificar_grupo_solicitud", grupo)
     monkeypatch.setattr(main, "guardar_mensaje", no_op)
     monkeypatch.setattr(main, "silenciar_conversacion", no_op)
     monkeypatch.setattr(main, "conversacion_silenciada", no_silenciada)
@@ -64,7 +59,7 @@ def flujo_aislado(monkeypatch):
     return enviados_grupo, enviados_cliente, solicitudes
 
 
-def test_emergencia_avisa_grupo_y_mantiene_respuesta_de_llamada(monkeypatch, flujo_aislado):
+def test_emergencia_se_registra_sin_avisar_grupo_y_mantiene_respuesta_de_llamada(monkeypatch, flujo_aislado):
     async def responder(*_args, **_kwargs):
         return "Llamá ahora por teléfono común al 4301-3967 o al 1565024510. No llamada de WhatsApp."
 
@@ -78,13 +73,12 @@ def test_emergencia_avisa_grupo_y_mantiene_respuesta_de_llamada(monkeypatch, flu
         )
     )
 
-    assert len(grupos) == 1
-    assert "URGENTE" in grupos[0][1]
+    assert grupos == []
     assert solicitudes[0]["direccion"] == "Thames 2331"
     assert clientes[0][1].startswith("Llamá ahora")
 
 
-def test_libertad_se_deriva_aunque_modelo_pida_quien_abre(monkeypatch, flujo_aislado):
+def test_libertad_se_registra_aunque_modelo_pida_quien_abre(monkeypatch, flujo_aislado):
     async def responder(*_args, **_kwargs):
         return "Buen día. ¿Quién abre o en qué horario pueden recibir al técnico?"
 
@@ -98,13 +92,13 @@ def test_libertad_se_deriva_aunque_modelo_pida_quien_abre(monkeypatch, flujo_ais
         )
     )
 
-    assert len(grupos) == 1
+    assert grupos == []
     assert solicitudes[0]["direccion"] == "Libertad 1262"
     assert solicitudes[0]["quien_abre"] == "Daniel, encargado"
-    assert "ya le enviamos" in clientes[0][1].lower()
+    assert "registrado" in clientes[0][1].lower()
 
 
-def test_torre_c_se_envia_como_arribenos_montaneses(monkeypatch, flujo_aislado):
+def test_torre_c_se_registra_como_arribenos_montaneses_sin_grupo(monkeypatch, flujo_aislado):
     async def responder(*_args, **_kwargs):
         return "Buen día. Decime la dirección y quién abre."
 
@@ -118,8 +112,7 @@ def test_torre_c_se_envia_como_arribenos_montaneses(monkeypatch, flujo_aislado):
         )
     )
 
-    assert len(grupos) == 1
-    assert "Arribeños / Montañeses 3150 Torre C" in grupos[0][1]
+    assert grupos == []
     assert solicitudes[0]["direccion"] == "Montañeses 3150 Torre C"
     assert solicitudes[0]["quien_abre"] == "Disponibilidad no informada"
 
@@ -145,7 +138,7 @@ def test_sin_direccion_pide_dato_y_no_inventa_envio(monkeypatch, flujo_aislado):
 
 def test_respuesta_posterior_con_solo_direccion_completa_el_reclamo(monkeypatch, flujo_aislado):
     async def responder(*_args, **_kwargs):
-        return "Buen día. Ya lo paso a los técnicos."
+        return "Buen día. El reclamo quedó registrado."
 
     async def historial(_telefono):
         return [
@@ -159,7 +152,7 @@ def test_respuesta_posterior_con_solo_direccion_completa_el_reclamo(monkeypatch,
 
     asyncio.run(main.procesar_mensaje_cliente("5491100009998", "Libertad 1262"))
 
-    assert len(grupos) == 1
+    assert grupos == []
     assert solicitudes[0]["direccion"] == "Libertad 1262"
 
 
@@ -204,7 +197,7 @@ def test_insiste_si_responden_sin_direccion(monkeypatch, flujo_aislado):
 
     assert grupos == []
     assert solicitudes == []
-    assert "no voy a poder pasar" in clientes[0][1].lower()
+    assert "no voy a poder registrar" in clientes[0][1].lower()
 
 
 def test_audio_se_interpreta_sin_devolver_transcripcion(monkeypatch, flujo_aislado):
@@ -228,7 +221,7 @@ def test_audio_se_interpreta_sin_devolver_transcripcion(monkeypatch, flujo_aisla
     assert "No repitas" in recibido_modelo[0]
     assert grupos == []
     assert solicitudes == []
-    assert clientes[0][1].startswith("Para poder enviar")
+    assert clientes[0][1].startswith("Para poder registrar")
     assert "carcasa" not in clientes[0][1].lower()
 
 
@@ -249,9 +242,9 @@ def test_reclamo_con_direccion_no_agrega_aviso_de_emergencia(monkeypatch, flujo_
         )
     )
 
-    assert len(grupos) == 1
+    assert grupos == []
     assert "4301-3967" not in clientes[0][1]
-    assert clientes[0][1].startswith("Perfecto, ya le enviamos")
+    assert clientes[0][1] == "Perfecto, el reclamo quedó registrado."
 
 
 def test_emergencia_sin_direccion_prioriza_llamada_y_no_deriva(monkeypatch, flujo_aislado):

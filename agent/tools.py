@@ -6,7 +6,6 @@ Herramientas específicas de Ascensores Carballino.
 Permiten al agente gestionar solicitudes de servicio y mantenimiento.
 """
 
-import os
 import yaml
 import logging
 
@@ -38,34 +37,15 @@ def obtener_contactos() -> dict:
 
 async def notificar_grupo_solicitud(telefono_cliente: str, resumen: str, proveedor=None, solicitud_id: int = 0) -> bool:
     """
-    Envía un resumen de la solicitud al grupo interno de WhatsApp.
-    Se llama automáticamente cuando Olivia completa la recopilación de datos.
-    Incluye el ID (#N) para que los técnicos puedan referenciarlo al responder.
+    Compatibilidad con llamadas antiguas: los grupos son siempre de solo lectura.
+
+    La prohibición también se aplica dentro de cada proveedor, de modo que ninguna
+    ruta nueva o accidental pueda eludirla.
     """
-    group_id = os.getenv("WHAPI_GROUP_ID", "")
-    if not group_id:
-        logger.warning("WHAPI_GROUP_ID no configurado — notificación no enviada")
-        return False
-
-    mensaje = f"#{solicitud_id} — {resumen}" if solicitud_id else resumen
-
-    if proveedor:
-        group_id_zapi = group_id.replace("@g.us", "-group")
-        logger.info(f"ENVIANDO RECLAMO A GRUPO | solicitud #{solicitud_id} | cliente {telefono_cliente}")
-        logger.info(f"GROUP_ID ORIGINAL: {group_id}")
-        logger.info(f"GROUP_ID ZAPI: {group_id_zapi}")
-        resultado = await proveedor.enviar_mensaje(group_id_zapi, mensaje)
-        if resultado:
-            logger.info(f"RESPUESTA ZAPI GRUPO | messageId: {resultado}")
-            if solicitud_id:
-                from agent.memory import actualizar_mensaje_grupo_id
-                await actualizar_mensaje_grupo_id(solicitud_id, resultado)
-                logger.info(f"Solicitud #{solicitud_id} vinculada al mensaje del grupo {resultado}")
-        else:
-            logger.error(f"ERROR ENVÍO GRUPO | Z-API no devolvió messageId | group_id_zapi: {group_id_zapi}")
-        return resultado
-
-    logger.warning("No hay proveedor disponible para notificar al grupo")
+    logger.critical(
+        "NOTIFICACION A GRUPO BLOQUEADA | "
+        f"solicitud=#{solicitud_id} | cliente={telefono_cliente} | modo=solo_lectura"
+    )
     return False
 
 

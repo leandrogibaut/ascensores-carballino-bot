@@ -65,7 +65,7 @@ whatsapp-agentkit/
 │   ├── brain.py         ← Ollama API + system prompt desde prompts.yaml
 │   ├── memory.py        ← SQLAlchemy: mensajes, solicitudes, intervenciones, grupo
 │   ├── reclamos.py      ← Red de seguridad determinista para no perder reclamos
-│   ├── tools.py         ← notificar_grupo_solicitud(), es_emergencia(), etc.
+│   ├── tools.py         ← bloqueo de notificaciones grupales, es_emergencia(), etc.
 │   ├── reports.py       ← Reporte diario de solicitudes
 │   ├── conocimiento.py  ← Lookup de clientes en clientes_direcciones.yaml
 │   └── providers/
@@ -101,7 +101,7 @@ procesar_acumulados() → procesar_mensaje_cliente()
     ↓
 obtener_historial() → generar_respuesta() (Ollama kimi-k2.6)
     ↓
-¿[SOLICITUD_COMPLETA:] o respaldo con dirección+falla? → guardar_solicitud() + notificar_grupo_solicitud()
+¿[SOLICITUD_COMPLETA:] o respaldo con dirección+falla? → guardar_solicitud() (sin enviar al grupo)
 ¿[DERIVAR_ADMIN]?       → marcar_estado_conversacion("pendiente_admin")
     ↓
 asegurar_aviso_emergencia()
@@ -120,12 +120,12 @@ _enviar_registrando() → Z-API envía respuesta al cliente
 **`[SOLICITUD_COMPLETA: {dirección}. {falla}. {quién abre/horario}.]`**
 - Se emite con dirección + falla; quién abre/horario es opcional y se informa como
   `Disponibilidad no informada` cuando falta
-- `main.py` lo intercepta, guarda la solicitud en Postgres y notifica al grupo interno con `#ID`
-- El cliente ve solo: "Perfecto, ya le enviamos la información a los técnicos..."
+- `main.py` lo intercepta y guarda la solicitud en Postgres, sin enviar mensajes a grupos
+- El cliente ve solo: "Perfecto, el reclamo quedó registrado."
 - `reclamos.py` deriva como respaldo si el modelo omite el tag pese a existir una falla y
   una dirección identificable
-- Una emergencia crítica conserva la respuesta de llamada telefónica y además avisa al
-  grupo en paralelo cuando se conoce la dirección
+- Una emergencia crítica conserva la respuesta de llamada telefónica y registra el caso
+  cuando se conoce la dirección
 
 **`[DERIVAR_ADMIN]`**
 - Se emite para consultas administrativas (facturas, pagos, contratos)
@@ -133,7 +133,7 @@ _enviar_registrando() → Z-API envía respuesta al cliente
 - El equipo humano toma la conversación
 
 ### Grupo interno de técnicos
-- Olivia publica un resumen del reclamo con `#ID`
+- Es de solo lectura: Olivia nunca publica mensajes, facturas, documentos ni reclamos
 - Los técnicos responden con reply → se vincula por `referenceMessageId` → `#N` → dirección (3 prioridades)
 - Sus respuestas actualizan el estado de la solicitud: `pendiente` → `resuelto` / `pendiente_con_nota`
 
