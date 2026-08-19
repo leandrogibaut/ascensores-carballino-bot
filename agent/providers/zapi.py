@@ -266,6 +266,34 @@ class ProveedorZapi(ProveedorWhatsApp):
                 return await self.enviar_mensaje(telefono, f"{texto}\n\n{opciones}")
             return True
 
+    async def enviar_mensaje_grupo(self, mensaje: str) -> str | None:
+        """Envía un mensaje al grupo interno de técnicos (WHAPI_GROUP_ID).
+        No recibe un destino: siempre apunta al grupo configurado por env var,
+        así ninguna ruta accidental puede usar este método para escribirle a
+        un destino distinto del grupo interno.
+        """
+        group_id = os.getenv("WHAPI_GROUP_ID", "")
+        if not group_id:
+            logger.warning("WHAPI_GROUP_ID no configurado — notificación de grupo no enviada")
+            return None
+        if not self._instance_id or not self._token:
+            logger.warning("ZAPI_INSTANCE_ID o ZAPI_TOKEN no disponibles")
+            return None
+        group_id_zapi = group_id.replace("@g.us", "-group")
+        async with httpx.AsyncClient(timeout=15) as client:
+            url = f"{self._get_base_url()}/send-text"
+            logger.info(f"Z-API POST {url} (grupo interno)")
+            r = await client.post(
+                url,
+                json={"phone": group_id_zapi, "message": mensaje},
+                headers=self._headers(),
+            )
+            if r.status_code not in (200, 201):
+                logger.error(f"Error Z-API envío grupo: {r.status_code} — {r.text}")
+                return None
+            data = r.json()
+            return data.get("messageId") or data.get("id")
+
     async def _transcribir_audio_url(self, audio_url: str) -> str:
         """Descarga el audio desde la URL de Z-API y lo transcribe con Groq."""
         groq_key = os.getenv("GROQ_API_KEY")

@@ -35,18 +35,29 @@ def obtener_contactos() -> dict:
     }
 
 
-async def notificar_grupo_solicitud(telefono_cliente: str, resumen: str, proveedor=None, solicitud_id: int = 0) -> bool:
+async def notificar_grupo_solicitud(telefono_cliente: str, resumen: str, proveedor=None, solicitud_id: int = 0) -> str | bool | None:
     """
-    Compatibilidad con llamadas antiguas: los grupos son siempre de solo lectura.
+    Envía un resumen de la solicitud al grupo interno de WhatsApp usando el
+    canal dedicado del proveedor (enviar_mensaje_grupo), el único autorizado
+    a alcanzar un destino grupal. Incluye el ID (#N) para que los técnicos
+    puedan referenciarlo al responder.
+    """
+    if not proveedor:
+        logger.warning("No hay proveedor disponible para notificar al grupo")
+        return None
 
-    La prohibición también se aplica dentro de cada proveedor, de modo que ninguna
-    ruta nueva o accidental pueda eludirla.
-    """
-    logger.critical(
-        "NOTIFICACION A GRUPO BLOQUEADA | "
-        f"solicitud=#{solicitud_id} | cliente={telefono_cliente} | modo=solo_lectura"
-    )
-    return False
+    mensaje = f"#{solicitud_id} — {resumen}" if solicitud_id else resumen
+    logger.info(f"ENVIANDO RECLAMO A GRUPO | solicitud #{solicitud_id} | cliente {telefono_cliente}")
+    resultado = await proveedor.enviar_mensaje_grupo(mensaje)
+    if resultado:
+        logger.info(f"RESPUESTA GRUPO | messageId: {resultado}")
+        if solicitud_id:
+            from agent.memory import actualizar_mensaje_grupo_id
+            await actualizar_mensaje_grupo_id(solicitud_id, resultado)
+            logger.info(f"Solicitud #{solicitud_id} vinculada al mensaje del grupo {resultado}")
+    else:
+        logger.error(f"ERROR ENVÍO GRUPO | solicitud #{solicitud_id}")
+    return resultado
 
 
 def es_emergencia(texto: str) -> bool:

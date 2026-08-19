@@ -138,3 +138,26 @@ class ProveedorWhapi(ProveedorWhatsApp):
             if r.status_code != 200:
                 logger.error(f"Error Whapi: {r.status_code} — {r.text}")
             return r.status_code == 200
+
+    async def enviar_mensaje_grupo(self, mensaje: str) -> bool:
+        """Envía un mensaje al grupo interno de técnicos (WHAPI_GROUP_ID)."""
+        group_id = os.getenv("WHAPI_GROUP_ID", "")
+        if not group_id:
+            logger.warning("WHAPI_GROUP_ID no configurado — notificación de grupo no enviada")
+            return False
+        if not self.token:
+            logger.warning("WHAPI_TOKEN no configurado — mensaje no enviado")
+            return False
+        headers = {
+            "Authorization": f"Bearer {self.token}",
+            "Content-Type": "application/json",
+        }
+        async with httpx.AsyncClient() as client:
+            r = await client.post(
+                self.url_envio,
+                json={"to": group_id, "body": mensaje},
+                headers=headers,
+            )
+            if r.status_code != 200:
+                logger.error(f"Error Whapi grupo: {r.status_code} — {r.text}")
+            return r.status_code == 200

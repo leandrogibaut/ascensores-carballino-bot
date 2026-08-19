@@ -6,9 +6,12 @@ Define la interfaz común que todos los proveedores de WhatsApp deben implementa
 Esto permite cambiar de proveedor sin modificar el resto del código.
 """
 
+import logging
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from fastapi import Request
+
+logger = logging.getLogger("agentkit")
 
 
 @dataclass
@@ -47,6 +50,16 @@ class ProveedorWhatsApp(ABC):
         """
         opciones = "\n".join(f"*{b['id']}* — {b['label']}" for b in botones)
         return await self.enviar_mensaje(telefono, f"{texto}\n\n{opciones}")
+
+    async def enviar_mensaje_grupo(self, mensaje: str) -> str | bool | None:
+        """
+        Envía un mensaje al grupo interno configurado (WHAPI_GROUP_ID).
+        Es el único método habilitado para alcanzar un grupo: no recibe un
+        destino arbitrario, por lo que enviar_mensaje() sigue bloqueando
+        cualquier destino grupal para todo el resto del código.
+        """
+        logger.warning("enviar_mensaje_grupo() no implementado para este proveedor")
+        return None
 
     async def validar_webhook(self, request: Request) -> dict | int | None:
         """Verificación GET del webhook (solo Meta la requiere). Retorna respuesta o None."""
