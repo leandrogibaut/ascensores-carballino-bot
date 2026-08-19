@@ -38,8 +38,13 @@ _EMERGENCIA_CRITICA_RE = re.compile(
 )
 
 _CONSULTA_ESTADO_RE = re.compile(
-    r"\b(quer[ií]a\s+saber|ya\s+pasaron|si\s+pasaron|fueron\s+a\s+ver|"
-    r"consulto\s+si|alguna\s+novedad)\b",
+    r"\b(quer[ií]a\s+saber|ya\s+(?:lo\s+)?pasaron|si\s+pasaron|fueron\s+a\s+ver|"
+    r"consulto\s+si|alguna\s+novedad|hay\s+novedad(?:es)?|"
+    r"van\s+a\s+venir|van\s+a\s+pasar|vinieron|cu[aá]ndo\s+vienen|"
+    r"me\s+confirm[aá]s?\s+si\s+(?:vienen|van)|"
+    r"vieron\s+(?:(?:el|los)\s+)?(?:mensaje|msj|reclamo)s?|"
+    r"pudieron\s+ver|"
+    r"pasaron\s+el\s+reclamo)\b",
     re.IGNORECASE,
 )
 
@@ -79,6 +84,17 @@ def es_reclamo_tecnico_claro(texto: str) -> bool:
     tiene_falla = bool(_FALLA_RE.search(texto))
     contexto_vertical = bool(re.search(r"\b(piso|pb|planta\s+baja)\b", texto, re.IGNORECASE))
     return tiene_falla and (tiene_equipo or contexto_vertical)
+
+
+def es_seguimiento_reclamo(texto: str) -> bool:
+    """Reconoce que el cliente pregunta por el estado de un reclamo previo
+    ("¿van a venir?", "¿vieron los mensajes?", "¿hay novedades?"), no que está
+    describiendo una falla nueva. Si el mensaje además describe una falla técnica
+    clara (ej. "van a venir técnicos por el ascensor 3 que quedó parado"), no se
+    considera un simple seguimiento — es_reclamo_tecnico_claro debe manejarlo.
+    """
+    texto = texto or ""
+    return bool(_CONSULTA_ESTADO_RE.search(texto)) and not _FALLA_RE.search(texto)
 
 
 def direccion_especial(texto: str) -> str:

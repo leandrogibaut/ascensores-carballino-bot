@@ -24,6 +24,10 @@ por WhatsApp. Clasifica mensajes, toma reclamos técnicos y deriva consultas adm
 - El silencio se chequea en **DOS momentos**: al recibir el mensaje Y justo antes de enviar respuesta
 - Implementado en: `es_intervencion_humana()` (zapi.py) → `silenciar_conversacion()` → `conversacion_silenciada()` (main.py) + chequeo dentro de `_enviar_registrando()`
 - Mientras está silenciada, Olivia no responde bajo ninguna circunstancia
+- `fromMe: true` (y los comandos manuales del admin) son los **únicos** disparadores de
+  silencio. **NO hay silencio automático de 6hs después de confirmar/derivar un reclamo**
+  al grupo — se evaluó reintroducirlo y se descartó a propósito, porque dejaría a Olivia
+  muda ante seguimientos legítimos del cliente ("¿van a venir?") durante esas 6hs.
 
 ### Aviso de emergencia obligatorio
 Toda respuesta del LLM debe incluir (o el código agrega con `asegurar_aviso_emergencia()`):
@@ -35,6 +39,18 @@ La función chequea si alguno de los dos números ya está en el texto antes de 
 ### Sin menú
 No existe menú de opciones. Olivia interpreta la intención directamente con el LLM.
 **Prohibido reintroducir menú** salvo pedido explícito del usuario.
+
+### Salida a grupos de WhatsApp
+- `enviar_mensaje()` (en cada proveedor) está **bloqueado para cualquier destino grupal**,
+  siempre — es la defensa en profundidad heredada del incidente que originó este bloqueo.
+- La **única excepción permitida** es la ruta dedicada y auditada:
+  `notificar_grupo_solicitud()` (tools.py) → `enviar_mensaje_grupo()` (capa de proveedores).
+  Ese método no recibe un destino arbitrario: siempre apunta al `WHAPI_GROUP_ID` configurado.
+- Olivia **nunca conversa dentro del grupo** ni responde a mensajes que los técnicos
+  escriben ahí — esos mensajes solo se leen para actualizar el estado de una solicitud
+  (`analizar_mensaje_tecnico()` en main.py).
+- **Prohibido** agregar un segundo camino de salida al grupo o hacer que `enviar_mensaje()`
+  deje de bloquear destinos grupales sin revisión explícita.
 
 ### Tono
 Cordial, profesional, argentino y breve. Tuteo o usted según el contexto, siempre natural.
@@ -64,8 +80,8 @@ whatsapp-agentkit/
 │   ├── main.py          ← FastAPI + webhook handler + debounce + silencio
 │   ├── brain.py         ← Ollama API + system prompt desde prompts.yaml
 │   ├── memory.py        ← SQLAlchemy: mensajes, solicitudes, intervenciones, grupo
-│   ├── reclamos.py      ← Red de seguridad determinista para no perder reclamos
-│   ├── tools.py         ← bloqueo de notificaciones grupales, es_emergencia(), etc.
+│   ├── reclamos.py      ← Red de seguridad determinista para no perder reclamos + detección de seguimientos
+│   ├── tools.py         ← notificar_grupo_solicitud() (ruta dedicada al grupo), es_emergencia(), etc.
 │   ├── reports.py       ← Reporte diario de solicitudes
 │   ├── conocimiento.py  ← Lookup de clientes en clientes_direcciones.yaml
 │   └── providers/
@@ -99,9 +115,18 @@ Debounce: acumular mensajes 10s (activa) / 120s (nueva)
     ↓
 procesar_acumulados() → procesar_mensaje_cliente()
     ↓
-obtener_historial() → generar_respuesta() (Ollama kimi-k2.6)
+obtener_historial() → ¿es seguimiento de un reclamo pendiente reciente (≤24hs)?
+    → inyecta contexto de esa solicitud (solo lectura, no crea ni modifica nada)
     ↓
-¿[SOLICITUD_COMPLETA:] o respaldo con dirección+falla? → guardar_solicitud() (sin enviar al grupo)
+generar_respuesta() (Ollama kimi-k2.6)
+    ↓
+¿[SOLICITUD_COMPLETA:] o respaldo con dirección+falla?
+    ¿hay solicitud activa del mismo teléfono (<10 min) con misma dirección o sin dirección nueva?
+        → SÍ: agregar_ampliacion_solicitud() + notificar_grupo_solicitud() (actualización, mismo ID)
+        → NO: guardar_solicitud() + notificar_grupo_solicitud() (solicitud nueva)
+    → "Perfecto, el reclamo quedó registrado." SOLO si notificar_grupo_solicitud() tuvo éxito
+    → si falla, la solicitud queda guardada igual y se responde el fallback (no se afirma
+      que fue avisado el equipo técnico)
 ¿[DERIVAR_ADMIN]?       → marcar_estado_conversacion("pendiente_admin")
     ↓
 asegurar_aviso_emergencia()
@@ -120,20 +145,41 @@ _enviar_registrando() → Z-API envía respuesta al cliente
 **`[SOLICITUD_COMPLETA: {dirección}. {falla}. {quién abre/horario}.]`**
 - Se emite con dirección + falla; quién abre/horario es opcional y se informa como
   `Disponibilidad no informada` cuando falta
-- `main.py` lo intercepta y guarda la solicitud en Postgres, sin enviar mensajes a grupos
-- El cliente ve solo: "Perfecto, el reclamo quedó registrado."
+- `main.py` lo intercepta y decide entre dos caminos según si hay una solicitud reciente
+  del mismo teléfono (ver "Ampliaciones vs. seguimientos" abajo):
+  - **Reclamo nuevo**: `guardar_solicitud()` en Postgres → `notificar_grupo_solicitud()`
+    (ruta dedicada, ver "Salida a grupos" en la sección 2).
+  - **Ampliación** de una solicitud existente (<10 min, misma dirección o sin dirección
+    nueva): `agregar_ampliacion_solicitud()` anexa el texto a la solicitud existente
+    (mismo `solicitud_id`, nunca crea una segunda) → `notificar_grupo_solicitud()` con una
+    única "Actualización #N" si la solicitud original ya había llegado al grupo.
+- El cliente ve **"Perfecto, el reclamo quedó registrado."** únicamente si
+  `notificar_grupo_solicitud()` tuvo éxito. Si falla, la solicitud igual queda guardada en
+  Postgres, se loguea `ERROR ENVÍO GRUPO`, y el cliente recibe `MENSAJE_RECLAMO_SIN_GRUPO`
+  (main.py) — nunca se afirma que el equipo técnico ya fue avisado.
 - `reclamos.py` deriva como respaldo si el modelo omite el tag pese a existir una falla y
   una dirección identificable
-- Una emergencia crítica conserva la respuesta de llamada telefónica y registra el caso
-  cuando se conoce la dirección
+- Una emergencia crítica conserva la respuesta de llamada telefónica y también intenta
+  registrar y notificar el caso cuando se conoce la dirección
 
 **`[DERIVAR_ADMIN]`**
 - Se emite para consultas administrativas (facturas, pagos, contratos)
 - `main.py` marca la conversación como `pendiente_admin` y deja de responder
 - El equipo humano toma la conversación
 
+### Ampliaciones vs. seguimientos — dos mecanismos distintos, no confundir
+
+| | Ampliación | Seguimiento |
+|---|---|---|
+| Ventana | **10 minutos** (`obtener_solicitud_activa_por_telefono`) | **24 horas** (`obtener_solicitud_pendiente_reciente_por_telefono`) |
+| Dispara cuando | el modelo emite `[SOLICITUD_COMPLETA]`/respaldo con misma dirección o sin dirección propia | el mensaje matchea `es_seguimiento_reclamo()` ("¿van a venir?", "¿hay novedades?", "¿vieron los mensajes?", etc.) |
+| Efecto | anexa texto a la solicitud existente (`agregar_ampliacion_solicitud`), notifica **una** actualización al grupo con el mismo `solicitud_id` | inyecta contexto de solo lectura al LLM (solicitud_id, dirección, falla, estado, fecha) — **no crea ni modifica nada** |
+| Dirección distinta | se trata como **reclamo nuevo independiente**, no se fusiona (protege a contactos multi-dirección) | no aplica — el seguimiento no toca la dirección |
+| Reglas al responder | igual que un reclamo nuevo (depende de que la notificación al grupo tenga éxito) | no repetir dirección/falla, no crear tag nuevo, no inventar técnico/horario, reconocer solo el estado real |
+
 ### Grupo interno de técnicos
-- Es de solo lectura: Olivia nunca publica mensajes, facturas, documentos ni reclamos
+- Olivia solo puede escribirle al grupo a través de `notificar_grupo_solicitud()` (ver
+  "Salida a grupos" en la sección 2) — nunca conversa ni responde ahí.
 - Los técnicos responden con reply → se vincula por `referenceMessageId` → `#N` → dirección (3 prioridades)
 - Sus respuestas actualizan el estado de la solicitud: `pendiente` → `resuelto` / `pendiente_con_nota`
 

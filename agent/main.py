@@ -28,6 +28,8 @@ from agent.memory import (
     actualizar_estado_solicitud, buscar_solicitud_por_direccion,
     buscar_solicitud_por_id, tiene_mensajes_recientes,
     obtener_solicitud_activa_por_telefono,
+    agregar_ampliacion_solicitud,
+    obtener_solicitud_pendiente_reciente_por_telefono,
     buscar_solicitud_por_mensaje_grupo,
     marcar_intervencion_humana,
     hay_intervencion_reciente,
@@ -47,8 +49,10 @@ from agent.reclamos import (
     crear_derivacion_respaldo,
     es_emergencia_critica,
     es_reclamo_tecnico_claro,
+    es_seguimiento_reclamo,
     extraer_direccion_libre,
 )
+from agent.tools import notificar_grupo_solicitud
 from agent.horarios import estado_atencion_olivia, olivia_debe_atender
 
 load_dotenv()
@@ -310,6 +314,11 @@ PEDIDO_DIRECCION_EMERGENCIA = (
     "No llamada de WhatsApp.\n\n"
     "Decime también la dirección exacta del edificio (calle y altura) para poder registrar el reclamo."
 )
+MENSAJE_RECLAMO_SIN_GRUPO = (
+    "Recibimos tu reclamo y quedó guardado, pero tuvimos un problema para avisarle "
+    "al equipo técnico en este momento. Si es urgente, llamá por teléfono común al "
+    "4301-3967 o al 1565024510. No llamada de WhatsApp."
+)
 
 def marcar_estado_conversacion(telefono: str, estado: str):
     conversaciones_estado[telefono] = {"estado": estado, "timestamp": datetime.now()}
@@ -498,6 +507,32 @@ async def procesar_mensaje_cliente(telefono: str, texto: str, es_audio: bool = F
         or _historial_espera_direccion(historial)
     )
 
+    # Seguimiento ("¿van a venir?", "¿hay novedades?"): la ventana de 24hs es
+    # deliberadamente más amplia que la de ampliación (10 min, más abajo) y no la
+    # reemplaza — solo agrega contexto de solo lectura para el LLM, no toca
+    # tag_match/derivacion_respaldo ni la lógica de creación/anexado de solicitudes.
+    if es_seguimiento_reclamo(texto) and not es_reclamo_tecnico_claro(texto_contexto):
+        solicitud_pendiente = await obtener_solicitud_pendiente_reciente_por_telefono(telefono)
+        if solicitud_pendiente:
+            fecha_hora = (
+                solicitud_pendiente.timestamp.replace(tzinfo=ZoneInfo("UTC"))
+                .astimezone(TZ_AR)
+                .strftime("%d/%m %H:%M")
+            )
+            contexto_cliente = (contexto_cliente + "\n\n" if contexto_cliente else "") + (
+                "- CONTEXTO DE SEGUIMIENTO: el cliente ya tiene un reclamo pendiente registrado, "
+                "este mensaje es un seguimiento sobre ese reclamo, no uno nuevo.\n"
+                f"  Solicitud #{solicitud_pendiente.id} — dirección: {solicitud_pendiente.direccion} — "
+                f"falla: {solicitud_pendiente.tipo} — estado: {solicitud_pendiente.estado} — "
+                f"registrado el {fecha_hora}.\n"
+                "  NO pidas la dirección ni la falla de nuevo, NO generes un nuevo "
+                "[SOLICITUD_COMPLETA]. NO inventes que un técnico está en camino ni prometas "
+                "un horario de visita. Respondé corto y humano, reconociendo el reclamo y su "
+                "estado actual (ej. \"Sí, tengo registrado el reclamo de "
+                f"{solicitud_pendiente.direccion}. Todavía figura {solicitud_pendiente.estado}.\")."
+            )
+            logger.info(f"SEGUIMIENTO DETECTADO | {tel_norm} | solicitud #{solicitud_pendiente.id}")
+
     mensaje_modelo = texto
     if es_audio:
         mensaje_modelo = (
@@ -557,24 +592,69 @@ async def procesar_mensaje_cliente(telefono: str, texto: str, es_audio: bool = F
             )
 
     _registrado_ok = False
+    _solicitud_id_actual = None
     if tag_match or derivacion_respaldo:
-        # Verificar si ya existe una solicitud registrada hoy para este número
+        # Verificar si ya existe una solicitud reciente (10 min) para este número.
+        # No alcanza con "mismo teléfono": si la dirección de este mensaje difiere
+        # de la de la solicitud existente, es un reclamo distinto (ej. contacto
+        # multi-dirección) y debe registrarse aparte, no fusionarse.
         solicitud_existente = await obtener_solicitud_activa_por_telefono(telefono)
-        if solicitud_existente:
-            logger.info(f"Solicitud #{solicitud_existente.id} ya registrada para {telefono} — tag duplicado ignorado")
-            _registrado_ok = True
+        direccion_existente = (getattr(solicitud_existente, "direccion", "") or "").strip().lower()
+        direccion_nueva = (direccion_confirmada or "").strip().lower()
+        es_ampliacion = bool(solicitud_existente) and (
+            not direccion_nueva or not direccion_existente or direccion_nueva == direccion_existente
+        )
+
+        if es_ampliacion:
+            texto_ampliacion = (
+                tag_match.group(1).strip()
+                if tag_match
+                else str(derivacion_respaldo["datos_raw"])
+            )
+            await agregar_ampliacion_solicitud(solicitud_existente.id, texto_ampliacion)
+            logger.info(f"AMPLIACION ANEXADA | solicitud #{solicitud_existente.id} | {telefono}")
+            _solicitud_id_actual = solicitud_existente.id
             limpiar_estado_conversacion(telefono)
             cancelar_recordatorio_direccion(telefono)
+            if solicitud_existente.mensaje_grupo_id:
+                # Sin "#N" acá: notificar_grupo_solicitud() ya antepone "#{solicitud_id} — "
+                # a partir del solicitud_id que le pasamos. Repetirlo acá duplicaba el ID
+                # en el mensaje final ("#77 — Actualización #77: ...").
+                mensaje_actualizacion = f"Actualización: {texto_ampliacion}"
+                resultado_actualizacion = await notificar_grupo_solicitud(
+                    telefono, mensaje_actualizacion, proveedor, solicitud_existente.id
+                )
+                if resultado_actualizacion:
+                    logger.info(f"AMPLIACION NOTIFICADA A GRUPO | solicitud #{solicitud_existente.id} | {telefono}")
+                    _registrado_ok = True
+                else:
+                    logger.error(f"ERROR ENVÍO GRUPO | ampliación solicitud #{solicitud_existente.id} | {telefono}")
+            else:
+                logger.warning(
+                    f"AMPLIACION SIN NOTIFICAR: solicitud #{solicitud_existente.id} "
+                    "original no había llegado al grupo"
+                )
         else:
+            if solicitud_existente:
+                logger.info(
+                    "RECLAMO DISTINTO DEL MISMO TELEFONO | "
+                    f"direccion nueva='{direccion_confirmada}' distinta de solicitud "
+                    f"#{solicitud_existente.id} ('{solicitud_existente.direccion}') | {telefono}"
+                )
             datos_raw = (
                 tag_match.group(1).strip()
                 if tag_match
                 else str(derivacion_respaldo["datos_raw"])
             )
-            _, extraido = formatear_resumen_solicitud(datos_raw)
+            resumen_texto, extraido = formatear_resumen_solicitud(datos_raw)
             # Para tags creados por el LLM, usar siempre la dirección comprobada
             # en el mensaje, el historial o la ficha del contacto.
             if direccion_confirmada:
+                direccion_modelo = extraido.get("direccion", "")
+                if direccion_modelo and direccion_modelo in resumen_texto:
+                    resumen_texto = resumen_texto.replace(direccion_modelo, direccion_confirmada, 1)
+                elif direccion_confirmada not in resumen_texto:
+                    resumen_texto = f"{direccion_confirmada}. {resumen_texto}".strip()
                 extraido["direccion"] = direccion_confirmada
             solicitud_id = await guardar_solicitud({
                 "telefono_cliente": telefono,
@@ -586,18 +666,25 @@ async def procesar_mensaje_cliente(telefono: str, texto: str, es_audio: bool = F
                 "piso_depto": extraido.get("piso_depto", ""),
             })
             if solicitud_id:
-                logger.info(f"RECLAMO REGISTRADO SIN ENVIO A GRUPO | solicitud #{solicitud_id} | {telefono}")
-                _registrado_ok = True
-                limpiar_estado_conversacion(telefono)
-                cancelar_recordatorio_direccion(telefono)
+                _solicitud_id_actual = solicitud_id
+                resultado_grupo = await notificar_grupo_solicitud(telefono, resumen_texto, proveedor, solicitud_id)
+                if resultado_grupo:
+                    logger.info(f"RECLAMO DERIVADO A GRUPO | solicitud #{solicitud_id} | {telefono}")
+                    _registrado_ok = True
+                    limpiar_estado_conversacion(telefono)
+                    cancelar_recordatorio_direccion(telefono)
+                else:
+                    logger.error(f"ERROR ENVÍO GRUPO | solicitud #{solicitud_id} | {telefono}")
             else:
                 logger.error(f"ERROR AL REGISTRAR RECLAMO | {telefono}")
         if tag_match:
             respuesta = re.sub(r'\[SOLICITUD_COMPLETA:.+?\]', '', respuesta, flags=re.DOTALL).strip()
         if _registrado_ok and not es_emergencia_critica(texto_contexto):
             respuesta = "Perfecto, el reclamo quedó registrado."
+        elif _solicitud_id_actual and not _registrado_ok and not es_emergencia_critica(texto_contexto):
+            respuesta = MENSAJE_RECLAMO_SIN_GRUPO
         if not respuesta:
-            respuesta = "Perfecto, el reclamo quedó registrado."
+            respuesta = "Perfecto, el reclamo quedó registrado." if _registrado_ok else MENSAJE_RECLAMO_SIN_GRUPO
 
     if re.search(r'\[DERIVAR_ADMIN\]', respuesta):
         respuesta = re.sub(r'\[DERIVAR_ADMIN\]', '', respuesta).strip()

@@ -254,6 +254,52 @@ async def obtener_solicitud_activa_por_telefono(telefono: str) -> "Solicitud | N
         return result.scalar_one_or_none()
 
 
+async def agregar_ampliacion_solicitud(solicitud_id: int, texto_adicional: str) -> "Solicitud | None":
+    """Anexa información adicional a una solicitud existente en vez de crear una
+    nueva o descartarla. Se usa cuando el cliente amplía un reclamo reciente
+    (mismo teléfono, dentro de la ventana de obtener_solicitud_activa_por_telefono,
+    10 minutos). No confundir con obtener_solicitud_pendiente_reciente_por_telefono,
+    que es una ventana mucho más amplia usada para reconocer seguimientos.
+    """
+    texto_adicional = (texto_adicional or "").strip()
+    async with async_session() as session:
+        query = select(Solicitud).where(Solicitud.id == solicitud_id)
+        result = await session.execute(query)
+        solicitud = result.scalar_one_or_none()
+        if not solicitud:
+            return None
+        if texto_adicional and texto_adicional not in solicitud.tipo:
+            solicitud.tipo = f"{solicitud.tipo} | Ampliación: {texto_adicional}".strip(" |")
+        await session.commit()
+        await session.refresh(solicitud)
+        return solicitud
+
+
+async def obtener_solicitud_pendiente_reciente_por_telefono(telefono: str, horas: int = 24) -> "Solicitud | None":
+    """Retorna la solicitud pendiente o pendiente_con_nota más reciente del
+    teléfono dentro de las últimas N horas. Se usa para que Olivia reconozca
+    seguimientos ("¿van a venir?") aunque el historial de mensajes ya se haya
+    vencido (ver obtener_historial, timeout de 4 horas). Ventana deliberadamente
+    más amplia que la de obtener_solicitud_activa_por_telefono (10 minutos, usada
+    para detectar ampliaciones) — son dos consultas distintas para dos usos distintos.
+    """
+    from datetime import timedelta
+    cutoff = datetime.utcnow() - timedelta(hours=horas)
+    async with async_session() as session:
+        query = (
+            select(Solicitud)
+            .where(
+                (Solicitud.telefono_cliente == telefono) &
+                (Solicitud.timestamp >= cutoff) &
+                (Solicitud.estado.in_(["pendiente", "pendiente_con_nota"]))
+            )
+            .order_by(Solicitud.timestamp.desc())
+            .limit(1)
+        )
+        result = await session.execute(query)
+        return result.scalar_one_or_none()
+
+
 async def buscar_solicitud_por_id(solicitud_id: int) -> "Solicitud | None":
     """Busca una solicitud por su ID."""
     async with async_session() as session:
