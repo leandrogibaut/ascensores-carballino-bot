@@ -46,6 +46,20 @@ EMERGENCIAS = [
     "se clavó entre dos pisos",
     "paró en el entrepiso con gente",
     "Quedo ENTRE PISOS",
+    # entre el <n> y el <n>, viejo/a, trabado/a con una persona
+    "la cabina quedó trabada entre el 3 y el 4 con mi vieja",
+    "se paró entre el 5 y el 6",
+    "quedó entre el 3ro y 4to",
+    "está entre el 2 y 3 y no se mueve",
+    "mi vieja quedó trabada en el ascensor",
+    "el nene está trabado en el asc, no abre",
+    "quedó trabado con mis viejos, hace 10 min",
+    "mi viejo sigue adentro",
+    # estoy/estamos/sigo/seguimos adentro (de la cabina)
+    "estoy adentro",
+    "estoy adentro del ascensor",
+    "seguimos adentro de la cabina",
+    "sigo adentro y no abre la puerta",
     # olor a quemado, humo, chispas
     "sale olor a quemado del motor",
     "huele a quemado en la sala de máquinas",
@@ -79,6 +93,19 @@ NO_EMERGENCIAS = [
     "el ascensor anda bien, solo queríamos consultar el presupuesto",
     "hay agua en el foso",
     "pisos 3 y 4 no nivelan",
+    # adentro de otro lugar o cierre
+    "estoy adentro del edificio esperando al técnico",
+    "ya estoy adentro, gracias",
+    "ya estamos adentro gracias!",
+    "estamos adentro de la oficina",
+    "sigo adentro del depto, avisame cuando llegue el técnico",
+    "estoy adentro del hall",
+    "seguimos adentro del palier esperando",
+    "estoy adentro de la casa",
+    # trabado/a sin persona
+    "la puerta está trabada",
+    "la puerta del 2do quedó trabada, la abrió el encargado",
+    "el ascensor está trabado en PB",
 ]
 
 

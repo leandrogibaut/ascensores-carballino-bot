@@ -44,7 +44,15 @@ _EMERGENCIA_CRITICA_RE = re.compile(
 _PERSONA = (
     r"(?:alguien|gente|personas?|nen[ea]s?|chic[oa]s?|nin[oa]s?|pib[ea]s?|"
     r"bebes?|senor(?:a|es|as)?|abuel[oa]s?|vecin[oa]s?|mama|papa|hij[oa]s?|"
-    r"herman[oa]s?|hombres?|mujer(?:es)?)"
+    r"herman[oa]s?|hombres?|mujer(?:es)?|viej[oa]s?)"
+)
+_PERSONA_RE = re.compile(rf"\b{_PERSONA}\b")
+# "estoy adentro" no cuenta si se refiere al edificio u otro ambiente, ni si es
+# un cierre ("ya estoy adentro, gracias").
+_ADENTRO_DE_OTRO_LUGAR = (
+    r"(?!\s+(?:del|de\s+la)\s+"
+    r"(?:edificio|departamento|depto|casa|oficina|local|hall|palier)\b)"
+    r"(?![\s,.!]*gracias)"
 )
 _PERSONA_EN_RIESGO_RE = re.compile(
     r"\b(?:"
@@ -52,11 +60,13 @@ _PERSONA_EN_RIESGO_RE = re.compile(
     r"|no\s+(?:puede|pueden|puedo|podemos|pudo|pudieron|logra|logran)\s+salir"
     r"|sin\s+poder\s+salir"
     r"|qued\w*(?:\s+\S+){0,5}?\s+adentro"
-    r"|(?:estoy|estamos|sigo|seguimos)\s+adentro"
+    rf"|(?:estoy|estamos|sigo|seguimos)\s+adentro{_ADENTRO_DE_OTRO_LUGAR}"
     rf"|{_PERSONA}(?:\s+\S+){{0,4}}?\s+adentro"
     r"|entre\s+(?:dos\s+|los\s+)?pisos?|entrepisos?"
+    r"|entre\s+el\s+\d+\w*\s+y\s+(?:el\s+)?\d+\w*"
     r")\b"
 )
+_TRABADO_RE = re.compile(r"\btrabad[oa]s?\b")
 
 # Riesgo de incendio o eléctrico descripto de forma coloquial. Mismo criterio:
 # texto normalizado y solo suma casos.
@@ -100,6 +110,14 @@ def _normalizar(texto: str) -> str:
     return re.sub(r"\s+", " ", texto).strip()
 
 
+def _persona_trabada(normalizado: str) -> bool:
+    """Trabado/a solo es emergencia si en la misma frase hay una persona."""
+    return any(
+        _TRABADO_RE.search(frase) and _PERSONA_RE.search(frase)
+        for frase in re.split(r"[.!?;\n]+", normalizado)
+    )
+
+
 def es_emergencia_critica(texto: str) -> bool:
     texto = texto or ""
     normalizado = _normalizar(texto)
@@ -107,6 +125,7 @@ def es_emergencia_critica(texto: str) -> bool:
         _EMERGENCIA_CRITICA_RE.search(texto)
         or _PERSONA_EN_RIESGO_RE.search(normalizado)
         or _RIESGO_FUEGO_RE.search(normalizado)
+        or _persona_trabada(normalizado)
     )
 
 
