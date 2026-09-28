@@ -37,6 +37,37 @@ _EMERGENCIA_CRITICA_RE = re.compile(
     re.IGNORECASE,
 )
 
+# Personas en riesgo dentro de la cabina. Se evalúa sobre texto normalizado
+# (minúsculas, sin tildes) y solo SUMA casos a _EMERGENCIA_CRITICA_RE: nunca
+# quita uno. Ante la duda se prefiere un falso positivo (respuesta de guardia)
+# a un falso negativo (persona atrapada tratada como reclamo común).
+_PERSONA = (
+    r"(?:alguien|gente|personas?|nen[ea]s?|chic[oa]s?|nin[oa]s?|pib[ea]s?|"
+    r"bebes?|senor(?:a|es|as)?|abuel[oa]s?|vecin[oa]s?|mama|papa|hij[oa]s?|"
+    r"herman[oa]s?|hombres?|mujer(?:es)?)"
+)
+_PERSONA_EN_RIESGO_RE = re.compile(
+    r"\b(?:"
+    r"encerrad[oa]s?|atrapad[oa]s?"
+    r"|no\s+(?:puede|pueden|puedo|podemos|pudo|pudieron|logra|logran)\s+salir"
+    r"|sin\s+poder\s+salir"
+    r"|qued\w*(?:\s+\S+){0,5}?\s+adentro"
+    r"|(?:estoy|estamos|sigo|seguimos)\s+adentro"
+    rf"|{_PERSONA}(?:\s+\S+){{0,4}}?\s+adentro"
+    r"|entre\s+(?:dos\s+|los\s+)?pisos?|entrepisos?"
+    r")\b"
+)
+
+# Riesgo de incendio o eléctrico descripto de forma coloquial. Mismo criterio:
+# texto normalizado y solo suma casos.
+_RIESGO_FUEGO_RE = re.compile(
+    r"\b(?:"
+    r"(?:olor|olorcito|huele)\s+a\s+quemado"
+    r"|humo|humareda"
+    r"|chispa\w*|chispe\w*|chisporrot\w*"
+    r")\b"
+)
+
 _CONSULTA_ESTADO_RE = re.compile(
     r"\b(quer[ií]a\s+saber|ya\s+(?:lo\s+)?pasaron|si\s+pasaron|fueron\s+a\s+ver|"
     r"consulto\s+si|alguna\s+novedad|hay\s+novedad(?:es)?|"
@@ -70,7 +101,13 @@ def _normalizar(texto: str) -> str:
 
 
 def es_emergencia_critica(texto: str) -> bool:
-    return bool(_EMERGENCIA_CRITICA_RE.search(texto or ""))
+    texto = texto or ""
+    normalizado = _normalizar(texto)
+    return bool(
+        _EMERGENCIA_CRITICA_RE.search(texto)
+        or _PERSONA_EN_RIESGO_RE.search(normalizado)
+        or _RIESGO_FUEGO_RE.search(normalizado)
+    )
 
 
 def es_reclamo_tecnico_claro(texto: str) -> bool:
