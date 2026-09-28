@@ -55,6 +55,14 @@ EMERGENCIAS = [
     "el nene está trabado en el asc, no abre",
     "quedó trabado con mis viejos, hace 10 min",
     "mi viejo sigue adentro",
+    # verbos de ascensor detenido + persona en la misma frase
+    "se trabó el ascensor con mis viejos",
+    "se trabaron con los chicos en el 7mo",
+    "se quedó parado con mi nene arriba",
+    "se clavó con mi abuela",
+    "se paró con mi hija, no contesta nadie",
+    "se detuvo el asc con una señora",
+    "está detenido con gente arriba",
     # estoy/estamos/sigo/seguimos adentro (de la cabina)
     "estoy adentro",
     "estoy adentro del ascensor",
@@ -106,6 +114,13 @@ NO_EMERGENCIAS = [
     "la puerta está trabada",
     "la puerta del 2do quedó trabada, la abrió el encargado",
     "el ascensor está trabado en PB",
+    # verbos de ascensor detenido sin persona, o "trabaja/trabajando"
+    "se paró el ascensor",
+    "se clavó el ascensor en el 4to",
+    "el ascensor se detuvo en PB",
+    "está detenido desde ayer",
+    "mi hijo trabaja en el edificio, el ascensor hace ruido",
+    "el vecino dice que están trabajando en la sala de máquinas",
 ]
 
 

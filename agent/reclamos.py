@@ -66,7 +66,11 @@ _PERSONA_EN_RIESGO_RE = re.compile(
     r"|entre\s+el\s+\d+\w*\s+y\s+(?:el\s+)?\d+\w*"
     r")\b"
 )
-_TRABADO_RE = re.compile(r"\btrabad[oa]s?\b")
+# Verbos de "ascensor detenido". Solo cuentan con una persona en la misma frase.
+# trab(?!aj) evita "trabaja/trabajando".
+_DETENIDO_RE = re.compile(
+    r"\b(?:trab(?!aj)\w*|se\s+paro|parad[oa]s?|se\s+clav\w*|se\s+detuv\w*|detenid[oa]s?)\b"
+)
 
 # Riesgo de incendio o eléctrico descripto de forma coloquial. Mismo criterio:
 # texto normalizado y solo suma casos.
@@ -111,9 +115,10 @@ def _normalizar(texto: str) -> str:
 
 
 def _persona_trabada(normalizado: str) -> bool:
-    """Trabado/a solo es emergencia si en la misma frase hay una persona."""
+    """Trabado, parado, se clavó o detenido solo es emergencia si en la misma
+    frase hay una persona."""
     return any(
-        _TRABADO_RE.search(frase) and _PERSONA_RE.search(frase)
+        _DETENIDO_RE.search(frase) and _PERSONA_RE.search(frase)
         for frase in re.split(r"[.!?;\n]+", normalizado)
     )
 
