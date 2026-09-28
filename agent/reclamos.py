@@ -62,7 +62,13 @@ _PERSONA_EN_RIESGO_RE = re.compile(
     r"|qued\w*(?:\s+\S+){0,5}?\s+adentro"
     rf"|(?:estoy|estamos|sigo|seguimos)\s+adentro{_ADENTRO_DE_OTRO_LUGAR}"
     rf"|{_PERSONA}(?:\s+\S+){{0,4}}?\s+adentro"
-    r"|entre\s+(?:dos\s+|los\s+)?pisos?|entrepisos?"
+    r")\b"
+)
+# Cabina detenida entre pisos: es emergencia crítica aunque no nombre a nadie,
+# pero no cuenta como "menciona una persona encerrada".
+_ENTRE_PISOS_RE = re.compile(
+    r"\b(?:"
+    r"entre\s+(?:dos\s+|los\s+)?pisos?|entrepisos?"
     r"|entre\s+el\s+\d+\w*\s+y\s+(?:el\s+)?\d+\w*"
     r")\b"
 )
@@ -129,9 +135,54 @@ def es_emergencia_critica(texto: str) -> bool:
     return bool(
         _EMERGENCIA_CRITICA_RE.search(texto)
         or _PERSONA_EN_RIESGO_RE.search(normalizado)
+        or _ENTRE_PISOS_RE.search(normalizado)
         or _RIESGO_FUEGO_RE.search(normalizado)
         or _persona_trabada(normalizado)
     )
+
+
+def menciona_persona_encerrada(texto: str) -> bool:
+    """El mensaje nombra a alguien encerrado/atrapado/que no puede salir, ahora
+    o recién (aunque diga que ya lo sacaron). Humo, fuego o "quedó entre pisos"
+    sin nadie nombrado son emergencia, pero no entran acá."""
+    normalizado = _normalizar(texto or "")
+    return bool(_PERSONA_EN_RIESGO_RE.search(normalizado) or _persona_trabada(normalizado))
+
+
+_RESCATE_RE = re.compile(
+    r"\b(?:"
+    r"(?:la|lo|los|las|nos|me|te|le|les)\s+"
+    r"(?:sacaron|saco|sacamos|sacaste|rescataron|rescato|rescatamos|liberaron|libero|liberamos)"
+    r"|ya\s+(?:sali\w*|(?:pudo|pudieron|pudimos|pude)\s+salir|(?:esta|estan|estamos|estoy)\s+afuera)"
+    r"|(?:pudo|pudieron|pudimos|pude|logro|lograron)\s+salir"
+    r"|rescatad[oa]s?|liberad[oa]s?"
+    r")\b"
+)
+_NEGACION_PREVIA_RE = re.compile(r"\b(?:no|nadie|nunca|sin|todavia|aun|ser)\b\W*(?:\w+\W+){0,2}$")
+_SIGUE_ENCERRADA_RE = re.compile(
+    r"\b(?:sigue|siguen|sigo|seguimos|continua|continuan|todavia|aun)\s+(?:\w+\s+){0,2}?"
+    r"(?:encerrad|atrapad|adentro|sin\s+poder\s+salir)"
+)
+
+
+def menciona_rescate(texto: str) -> bool:
+    """El mensaje dice claramente que la persona ya salió o la sacaron. Ante
+    negación ("todavía no la sacaron"), pregunta ("¿ya la sacaron?") o
+    contradicción ("sigue encerrada") devuelve False: en la duda se pregunta."""
+    normalizado = _normalizar(texto or "")
+    if _SIGUE_ENCERRADA_RE.search(normalizado):
+        return False
+    for match in _RESCATE_RE.finditer(normalizado):
+        antes = normalizado[max(0, match.start() - 30):match.start()]
+        if _NEGACION_PREVIA_RE.search(antes):
+            continue
+        inicio = max(normalizado.rfind(c, 0, match.start()) for c in ".!\n") + 1
+        fines = [i for i in (normalizado.find(c, match.end()) for c in ".!\n") if i != -1]
+        frase = normalizado[inicio:min(fines) if fines else len(normalizado)]
+        if "?" in frase or "¿" in frase:
+            continue
+        return True
+    return False
 
 
 def es_reclamo_tecnico_claro(texto: str) -> bool:

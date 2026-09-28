@@ -51,6 +51,8 @@ from agent.reclamos import (
     es_reclamo_tecnico_claro,
     es_seguimiento_reclamo,
     extraer_direccion_libre,
+    menciona_persona_encerrada,
+    menciona_rescate,
 )
 from agent.tools import notificar_grupo_solicitud
 from agent.horarios import estado_atencion_olivia, olivia_debe_atender
@@ -320,8 +322,68 @@ MENSAJE_RECLAMO_SIN_GRUPO = (
     "4301-3967 o al 1565024510. No llamada de WhatsApp."
 )
 
-def marcar_estado_conversacion(telefono: str, estado: str):
-    conversaciones_estado[telefono] = {"estado": estado, "timestamp": datetime.now()}
+# Persona encerrada/atrapada: respuesta FIJA armada por código, nunca del LLM.
+PREGUNTA_PERSONA_ENCERRADA = "¿La persona sigue encerrada o ya pudo salir?"
+PERSONA_RESCATADA = (
+    "Entendido, qué bueno que ya pudieron sacarla. Si vuelve a quedar alguien encerrado, "
+    "WhatsApp no es el medio: llamá YA por teléfono común al 4301-3967 o al 1565024510, "
+    "sí o sí. No por llamada de WhatsApp."
+)
+LLAMAR_PERSONA_ENCERRADA = (
+    "Si sigue encerrada, WhatsApp no es el medio: llamá YA por teléfono común al "
+    "4301-3967 o al 1565024510, sí o sí. No por llamada de WhatsApp."
+)
+PEDIDO_DIRECCION_PERSONA_ENCERRADA = (
+    "Pasame también la dirección exacta del edificio (calle y altura) para registrar el reclamo."
+)
+RECLAMO_URGENTE_AVISADO = "Ya pasamos el reclamo urgente al equipo técnico."
+RECLAMO_URGENTE_SIN_AVISO = (
+    "No pudimos avisar al equipo técnico por este medio: por eso es importante que llames."
+)
+RECORDATORIO_DIRECCION_PERSONA_ENCERRADA = (
+    "Todavía necesito la dirección exacta del edificio (calle y altura) para registrar el reclamo.\n\n"
+    "Si la persona sigue encerrada, llamá YA por teléfono común al 4301-3967 o al 1565024510, "
+    "sí o sí. No por llamada de WhatsApp."
+)
+RECORDATORIO_DIRECCION_EMERGENCIA = (
+    "Todavía necesito la dirección exacta del edificio (calle y altura) para registrar el reclamo.\n\n"
+    "Si es una emergencia, llamá YA por teléfono común al 4301-3967 o al 1565024510. "
+    "No por llamada de WhatsApp."
+)
+
+
+def texto_persona_encerrada(
+    preguntar: bool,
+    falta_direccion: bool,
+    registrado: bool = False,
+    intento_registro: bool = False,
+    rescatada: bool = False,
+) -> str:
+    if rescatada:
+        partes = [PERSONA_RESCATADA]
+    else:
+        partes = [PREGUNTA_PERSONA_ENCERRADA] if preguntar else []
+        partes.append(LLAMAR_PERSONA_ENCERRADA)
+    if falta_direccion:
+        partes.append(PEDIDO_DIRECCION_PERSONA_ENCERRADA)
+    elif registrado:
+        partes.append(RECLAMO_URGENTE_AVISADO)
+    elif intento_registro:
+        partes.append(RECLAMO_URGENTE_SIN_AVISO)
+    return "\n\n".join(partes)
+
+
+def _ya_se_pregunto_por_persona_encerrada(historial: list[dict], solo_ultimo: bool) -> bool:
+    respuestas = [str(m.get("content", "")) for m in historial[-6:] if m.get("role") == "assistant"]
+    if solo_ultimo:
+        respuestas = respuestas[-1:]
+    return any(PREGUNTA_PERSONA_ENCERRADA in r for r in respuestas)
+
+def marcar_estado_conversacion(telefono: str, estado: str, emergencia: str | None = None):
+    """`emergencia`: None, "persona" (alguien encerrado) u "otra" (humo, entre pisos...)."""
+    conversaciones_estado[telefono] = {
+        "estado": estado, "timestamp": datetime.now(), "emergencia": emergencia,
+    }
 
 def obtener_estado_conversacion(telefono: str) -> str | None:
     datos = conversaciones_estado.get(telefono)
@@ -385,8 +447,13 @@ async def _recordar_direccion(telefono: str):
             return
         if await conversacion_silenciada(telefono):
             return
-        await guardar_mensaje(telefono, "assistant", RECORDATORIO_DIRECCION)
-        await _enviar_registrando(telefono, RECORDATORIO_DIRECCION)
+        emergencia = (conversaciones_estado.get(telefono) or {}).get("emergencia")
+        recordatorio = {
+            "persona": RECORDATORIO_DIRECCION_PERSONA_ENCERRADA,
+            "otra": RECORDATORIO_DIRECCION_EMERGENCIA,
+        }.get(emergencia, RECORDATORIO_DIRECCION)
+        await guardar_mensaje(telefono, "assistant", recordatorio)
+        await _enviar_registrando(telefono, recordatorio)
         logger.info(f"RECORDATORIO DIRECCION ENVIADO | {normalizar_numero_whatsapp(telefono)}")
     except asyncio.CancelledError:
         logger.debug(f"Recordatorio de dirección cancelado | {normalizar_numero_whatsapp(telefono)}")
@@ -554,15 +621,37 @@ async def procesar_mensaje_cliente(telefono: str, texto: str, es_audio: bool = F
         or es_reclamo_tecnico_claro(texto_contexto)
     )
 
+    # Persona encerrada/atrapada: texto fijo, nunca el del LLM. También el turno
+    # que responde a la pregunta "¿sigue encerrada?". Si el mensaje dice
+    # claramente que ya la sacaron, no se pregunta; en la duda, se pregunta.
+    menciona_encerrada = menciona_persona_encerrada(texto)
+    flujo_persona_encerrada = menciona_encerrada or _ya_se_pregunto_por_persona_encerrada(
+        historial, solo_ultimo=True
+    )
+    persona_rescatada = flujo_persona_encerrada and menciona_rescate(texto)
+    preguntar_persona_encerrada = menciona_encerrada and not _ya_se_pregunto_por_persona_encerrada(
+        historial, solo_ultimo=False
+    )
+    if flujo_persona_encerrada and not persona_rescatada:
+        tipo_emergencia = "persona"
+    elif flujo_persona_encerrada or es_emergencia_critica(texto_contexto):
+        tipo_emergencia = "otra"
+    else:
+        tipo_emergencia = None
+
     # La dirección es una barrera determinista: el modelo nunca puede saltearla
     # inventando un tag incompleto. Horario y quién abre siguen siendo opcionales.
     if reclamo_en_curso and not direccion_confirmada:
-        if es_emergencia_critica(texto_contexto):
+        if flujo_persona_encerrada:
+            respuesta = texto_persona_encerrada(
+                preguntar_persona_encerrada, falta_direccion=True, rescatada=persona_rescatada
+            )
+        elif es_emergencia_critica(texto_contexto):
             respuesta = PEDIDO_DIRECCION_EMERGENCIA
         else:
             respuesta = RECORDATORIO_DIRECCION if esperaba_direccion else PEDIDO_DIRECCION
         tag_match = None
-        marcar_estado_conversacion(telefono, "pendiente_direccion")
+        marcar_estado_conversacion(telefono, "pendiente_direccion", emergencia=tipo_emergencia)
         programar_recordatorio_direccion(telefono)
         logger.warning(f"RECLAMO RETENIDO SIN DIRECCION | {tel_norm}")
 
@@ -685,6 +774,17 @@ async def procesar_mensaje_cliente(telefono: str, texto: str, es_audio: bool = F
             respuesta = MENSAJE_RECLAMO_SIN_GRUPO
         if not respuesta:
             respuesta = "Perfecto, el reclamo quedó registrado." if _registrado_ok else MENSAJE_RECLAMO_SIN_GRUPO
+
+    if flujo_persona_encerrada and not (reclamo_en_curso and not direccion_confirmada):
+        # Con dirección: el reclamo ya se intentó registrar arriba; la respuesta
+        # igual es el texto fijo (y reemplaza cualquier tag que haya dejado el LLM).
+        respuesta = texto_persona_encerrada(
+            preguntar_persona_encerrada,
+            falta_direccion=False,
+            registrado=_registrado_ok,
+            intento_registro=bool(_solicitud_id_actual),
+            rescatada=persona_rescatada,
+        )
 
     if re.search(r'\[DERIVAR_ADMIN\]', respuesta):
         respuesta = re.sub(r'\[DERIVAR_ADMIN\]', '', respuesta).strip()

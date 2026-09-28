@@ -86,7 +86,8 @@ def test_emergencia_avisa_grupo_y_mantiene_respuesta_de_llamada(monkeypatch, flu
     assert len(grupos) == 1
     assert "URGENTE" in grupos[0][1]
     assert solicitudes[0]["direccion"] == "Thames 2331"
-    assert clientes[0][1].startswith("Llamá ahora")
+    # Persona atrapada: texto fijo (pregunta + teléfonos + aviso al equipo), no el del LLM.
+    assert clientes[0][1] == main.texto_persona_encerrada(True, falta_direccion=False, registrado=True)
 
 
 def test_libertad_se_registra_aunque_modelo_pida_quien_abre(monkeypatch, flujo_aislado):
@@ -275,7 +276,7 @@ def test_emergencia_sin_direccion_prioriza_llamada_y_no_deriva(monkeypatch, fluj
 
     assert grupos == []
     assert solicitudes == []
-    assert clientes[0][1].startswith("Llamá ahora")
+    assert clientes[0][1] == main.texto_persona_encerrada(True, falta_direccion=True)
     assert "dirección exacta" in clientes[0][1].lower()
 
 
