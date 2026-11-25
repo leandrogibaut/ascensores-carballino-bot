@@ -63,7 +63,7 @@ Cordial, profesional, argentino y breve. Tuteo o usted según el contexto, siemp
 |-----------------|-------------------------------------|
 | Runtime          | Python 3.11+                        |
 | Servidor         | FastAPI + Uvicorn                   |
-| IA               | Ollama — modelo `kimi-k2.6`         |
+| IA               | Gemini `gemini-4-hydrogen` (reasoning_effort low); Ollama solo como vuelta atrás |
 | WhatsApp         | Z-API                               |
 | Transcripción    | Groq Whisper (`whisper-large-v3-turbo`) |
 | Base de datos    | PostgreSQL (Railway) / SQLite (local) |

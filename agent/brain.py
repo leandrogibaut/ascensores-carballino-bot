@@ -11,7 +11,10 @@ logger = logging.getLogger("agentkit")
 
 LLM_PROVIDER = os.getenv("LLM_PROVIDER", "ollama").lower()
 OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "kimi-k2.6")
-GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
+# gemini-2.5-flash se apaga el 01/12/2026. hydrogen con reasoning_effort "low": sin el ajuste,
+# en 5 de 40 conversaciones reales pensaba tanto que la respuesta salía vacía (25/11/2026).
+GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-4-hydrogen")
+GEMINI_REASONING_EFFORT = os.getenv("GEMINI_REASONING_EFFORT", "low")
 
 _ollama_client = AsyncOpenAI(
     base_url="https://ollama.com/v1",
@@ -52,11 +55,12 @@ def obtener_mensaje_fallback() -> str:
     return config.get("fallback_message", "Disculpe, no pude interpretar su mensaje. ¿Podría reformularlo, por favor?")
 
 
-async def _llamar_llm(client: AsyncOpenAI, model: str, system_prompt: str, mensajes: list) -> str:
+async def _llamar_llm(client: AsyncOpenAI, model: str, system_prompt: str, mensajes: list, **extra) -> str:
     response = await client.chat.completions.create(
         model=model,
         max_tokens=2048,
         messages=[{"role": "system", "content": system_prompt}] + mensajes,
+        **extra,
     )
     uso = response.usage
     logger.info(f"Respuesta generada ({uso.prompt_tokens} in / {uso.completion_tokens} out)")
@@ -66,7 +70,8 @@ async def _llamar_llm(client: AsyncOpenAI, model: str, system_prompt: str, mensa
 async def generar_respuesta(mensaje: str, historial: list[dict], contexto_cliente: str = "") -> str:
     """
     Genera una respuesta usando el LLM configurado (Gemini o Ollama).
-    Si LLM_PROVIDER=gemini y Gemini falla, usa Ollama como fallback.
+    Si LLM_PROVIDER=gemini y Gemini falla o responde vacío, reintenta una vez; si vuelve a
+    fallar, devuelve el mensaje de error. Ya no cae a Ollama (dado de baja en nov/2026).
     """
     if not mensaje or len(mensaje.strip()) < 2:
         return obtener_mensaje_fallback()
@@ -81,12 +86,18 @@ async def generar_respuesta(mensaje: str, historial: list[dict], contexto_client
 
     try:
         if LLM_PROVIDER == "gemini" and _gemini_client:
-            try:
-                respuesta = await _llamar_llm(_gemini_client, GEMINI_MODEL, system_prompt, mensajes)
-                logger.info(f"LLM usado: gemini / {GEMINI_MODEL}")
-                return respuesta
-            except Exception as e:
-                logger.warning(f"Gemini falló ({e}), usando Ollama como fallback")
+            extra = {"reasoning_effort": GEMINI_REASONING_EFFORT} if GEMINI_REASONING_EFFORT else {}
+            for intento in (1, 2):
+                try:
+                    respuesta = await _llamar_llm(_gemini_client, GEMINI_MODEL, system_prompt, mensajes, **extra)
+                    if respuesta and respuesta.strip():
+                        logger.info(f"LLM usado: gemini / {GEMINI_MODEL}")
+                        return respuesta
+                    logger.warning(f"Gemini respondió vacío (intento {intento})")
+                except Exception as e:
+                    logger.warning(f"Gemini falló (intento {intento}): {e}")
+            logger.error("Gemini falló dos veces, se manda el mensaje de error")
+            return obtener_mensaje_error()
 
         respuesta = await _llamar_llm(_ollama_client, OLLAMA_MODEL, system_prompt, mensajes)
         logger.info(f"LLM usado: ollama / {OLLAMA_MODEL}")
