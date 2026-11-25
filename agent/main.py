@@ -66,6 +66,24 @@ log_level = logging.DEBUG if ENVIRONMENT == "development" else logging.INFO
 logging.basicConfig(level=log_level)
 logger = logging.getLogger("agentkit")
 
+
+class _OcultarClaveWebhook(logging.Filter):
+    """Tapa el valor de ?clave= en los registros de acceso (no queda en los logs de Railway)."""
+
+    _patron = re.compile(r"(clave=)[^&\s\"]+")
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        if isinstance(record.args, tuple):
+            record.args = tuple(
+                self._patron.sub(r"\1***", a) if isinstance(a, str) else a for a in record.args
+            )
+        if isinstance(record.msg, str):
+            record.msg = self._patron.sub(r"\1***", record.msg)
+        return True
+
+
+logging.getLogger("uvicorn.access").addFilter(_OcultarClaveWebhook())
+
 # Proveedor de WhatsApp (se configura en .env con WHATSAPP_PROVIDER)
 proveedor = obtener_proveedor()
 PORT = int(os.getenv("PORT", 8000))
@@ -918,6 +936,22 @@ async def webhook_verificacion(request: Request):
     return {"status": "ok"}
 
 
+def _webhook_autorizado(request: Request) -> bool:
+    """
+    Valida la clave del webhook (?clave=... en la URL configurada en Z-API).
+    Si WEBHOOK_CLAVE no está configurada, acepta todo (comportamiento anterior):
+    así se puede publicar el código primero, cambiar la URL en Z-API después,
+    y recién al final activar la exigencia cargando la variable en Railway.
+    """
+    esperada = os.getenv("WEBHOOK_CLAVE", "").strip()
+    if not esperada:
+        return True
+    recibida = request.query_params.get("clave", "").strip()
+    if not recibida:
+        return False
+    return secrets.compare_digest(recibida.encode(), esperada.encode())
+
+
 @app.post("/webhook/messages")
 @app.post("/webhook")
 async def webhook_handler(request: Request):
@@ -925,6 +959,9 @@ async def webhook_handler(request: Request):
     Recibe mensajes de WhatsApp via el proveedor configurado.
     Procesa el mensaje, genera respuesta con Claude y la envía de vuelta.
     """
+    if not _webhook_autorizado(request):
+        logger.warning("WEBHOOK RECHAZADO: clave ausente o incorrecta")
+        raise HTTPException(status_code=401, detail="No autorizado")
     try:
         # ── Early return: detectar intervención humana en el payload crudo ──
         # Se hace ANTES de parsear para no depender del tipo de webhook de Z-API.
