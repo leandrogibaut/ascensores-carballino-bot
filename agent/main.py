@@ -9,6 +9,7 @@ Funciona con cualquier proveedor (Whapi, Meta, Twilio) gracias a la capa de prov
 import os
 import re
 import json
+import secrets
 import asyncio
 import unicodedata
 import logging
@@ -879,9 +880,23 @@ async def health_check():
     }
 
 
+def _clave_lectura_valida(request: Request) -> bool:
+    """
+    Valida la clave del header X-Api-Key contra API_LECTURA_CLAVE.
+    Cerrado por defecto: si la variable no está configurada, nadie puede leer.
+    """
+    esperada = os.getenv("API_LECTURA_CLAVE", "").strip()
+    recibida = request.headers.get("X-Api-Key", "").strip()
+    if not esperada or not recibida:
+        return False
+    return secrets.compare_digest(recibida.encode(), esperada.encode())
+
+
 @app.get("/api/mensajes-grupo-hoy")
-async def mensajes_grupo_hoy():
-    """Retorna todos los mensajes del grupo interno recibidos hoy."""
+async def mensajes_grupo_hoy(request: Request):
+    """Retorna todos los mensajes del grupo interno recibidos hoy (requiere X-Api-Key)."""
+    if not _clave_lectura_valida(request):
+        raise HTTPException(status_code=401, detail="No autorizado")
     mensajes = await obtener_mensajes_grupo_del_dia()
     return [
         {
